@@ -3,6 +3,7 @@ import { ZONES } from '../engine';
 import {
   BOT_KINDS,
   type Ask,
+  type ClientMsg,
   type LobbyState,
   type RoomSettings,
   type ServerMsg,
@@ -12,6 +13,7 @@ import {
 import { clear, fmtEffect, h, lifeText, pct } from './dom';
 import { draw, layoutBoard, TILE_NAME, type Layout, type Pt } from './board';
 import { Net } from './net';
+import { LocalNet } from './local';
 import { DEFAULT_AVATAR, SEAT_COLORS, sanitizeAvatar, type Avatar } from '../shared/avatar';
 import { avatarImage } from './avatar2d';
 import { createCreator } from './creator';
@@ -60,7 +62,10 @@ const S = {
 const app = document.getElementById('app')!;
 const connEl = document.getElementById('conn')!;
 
-const net = new Net(() => ({ t: 'hello', name: S.name || '손님', avatar: S.avatar, ...(S.session ? { session: S.session } : {}) }));
+/** 단독 실행판(서버 없음)에서는 브라우저 안에서 게임을 돌린다 */
+const LOCAL = !!(window as unknown as { __LH_LOCAL__?: boolean }).__LH_LOCAL__;
+const hello = (): ClientMsg => ({ t: 'hello', name: S.name || '손님', avatar: S.avatar, ...(S.session ? { session: S.session } : {}) });
+const net: Net | LocalNet = LOCAL ? new LocalNet(hello) : new Net(hello);
 net.onStatus = (on) => connEl.classList.toggle('hidden', on);
 net.onMsg = onMsg;
 
@@ -99,7 +104,7 @@ function onMsg(m: ServerMsg) {
         S.state = null;
         S.result = null;
         stopGame();
-        const code = location.hash.replace('#', '').trim();
+        const code = LOCAL ? '' : location.hash.replace('#', '').trim();
         if (code.length === 4 && !S.error) net.send({ t: 'joinRoom', code });
       } else if (S.screen === 'home') {
         S.screen = m.room.inGame && S.info ? 'game' : 'lobby';
@@ -107,8 +112,12 @@ function onMsg(m: ServerMsg) {
         // 게임이 끝났는데 결과를 못 받았다면 대기실로
         S.screen = 'lobby';
       }
-      if (m.room) history.replaceState(null, '', `#${m.room.code}`);
-      else history.replaceState(null, '', location.pathname);
+      try {
+        if (m.room && !LOCAL) history.replaceState(null, '', `#${m.room.code}`);
+        else if (!LOCAL) history.replaceState(null, '', location.pathname);
+      } catch {
+        /* 주소 갱신을 못 하는 환경 */
+      }
       render();
       break;
     case 'started':
@@ -195,7 +204,22 @@ function viewHome(): HTMLElement {
       h('h2', null, '내 캐릭터'),
       createCreator(S.avatar, onAvatar),
     ),
-    h('div', { class: 'card' },
+    LOCAL
+      ? h('div', { class: 'card' },
+          h('h2', null, '여행 떠나기'),
+          h('div', { class: 'muted', style: { marginBottom: '10px' } }, '이 버전은 컴퓨터 플레이어와 함께 혼자 즐기는 단독 실행판이에요. (여러 사람이 함께 하려면 서버판을 실행하세요)'),
+          h('button', {
+            class: 'primary',
+            style: { fontSize: '17px', padding: '12px 28px' },
+            onclick: () => {
+              saveName();
+              net.send({ t: 'createRoom' });
+              for (const k of ['greedy', 'brawler', 'builder']) net.send({ t: 'addBot', kind: k });
+            },
+          }, '🏝️ 컴퓨터와 여행 준비하기'),
+          h('div', { id: 'err', class: 'err' }, S.error),
+        )
+      : h('div', { class: 'card' },
       h('h2', null, '방 만들기 / 입장'),
       h('div', { class: 'row' },
         h('button', { class: 'primary', onclick: () => { saveName(); net.send({ t: 'createRoom' }); } }, '새 방 만들기'),
@@ -250,10 +274,10 @@ function viewLobby(l: LobbyState): HTMLElement {
   return h('div', { class: 'center' },
     h('div', { class: 'hero' },
       h('h1', null, '대기실'),
-      h('p', null, '친구에게 코드를 알려 주세요'),
-      h('div', { class: 'code' }, l.code),
+      h('p', null, LOCAL ? '컴퓨터와 함께 떠나는 여행 — 코스와 난이도를 고르고 시작하세요' : '친구에게 코드를 알려 주세요'),
+      LOCAL ? null : h('div', { class: 'code' }, l.code),
       h('div', { class: 'row', style: { justifyContent: 'center', marginTop: '6px' } },
-        h('button', { class: 'small', onclick: () => navigator.clipboard?.writeText(location.href) }, '링크 복사'),
+        LOCAL ? null : h('button', { class: 'small', onclick: () => navigator.clipboard?.writeText(location.href) }, '링크 복사'),
         h('button', { class: 'small danger', onclick: () => { net.send({ t: 'leaveRoom' }); } }, '나가기'),
       ),
     ),

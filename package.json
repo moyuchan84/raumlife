@@ -10,7 +10,8 @@
     "sim": "tsx src/sim/simulate.ts",
     "build:client": "node scripts/build-client.mjs",
     "start": "npm run build:client && tsx src/server/index.ts",
-    "server": "tsx src/server/index.ts"
+    "server": "tsx src/server/index.ts",
+    "build:standalone": "node scripts/build-standalone.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.11",
