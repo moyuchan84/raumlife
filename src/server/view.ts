@@ -25,7 +25,7 @@ export function stateView(s: GameState, seats: Seat[], viewer: number): StateVie
     return {
       id: p.id,
       name: seat.name,
-      token: seat.token,
+      avatar: seat.avatar,
       team: p.team,
       isBot: seat.kind === 'bot',
       connected: seat.kind === 'bot' || seat.connected,

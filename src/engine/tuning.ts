@@ -16,4 +16,5 @@ export const DEFAULT_TUNING: Tuning = {
   rerollCost: 2,
   milestoneThresholdPerZone: 3,
   secondsPerTurn: 20,
+  moveBonus: 1,
 };

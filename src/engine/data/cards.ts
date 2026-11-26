@@ -1,4 +1,4 @@
-import type { Effect, JourneyCard } from '../types';
+import type { CardDeck, Effect, JourneyCard } from '../types';
 
 type E = Effect;
 /** 카드 정의 헬퍼: safe 효과, 도전(체력 비용, 난이도 dc, 성공, 실패) */
@@ -66,3 +66,51 @@ const RAW: JourneyCard[] = [
 ];
 
 export const CARDS: JourneyCard[] = RAW.map((card, i) => ({ ...card, id: `j-${i + 1}` }));
+
+// ───────── 액티비티 카드: 참가하면 보상이 크다 (구경만 해도 조금 즐겁다) ─────────
+const ACT_RAW: JourneyCard[] = [
+  c(1, '모래성 쌓기', { happy: 1 }, 1, 3, { happy: 2, growth: 2, network: 1 }, { happy: 1 }),
+  c(2, '정글 탐험 대회', { happy: 1 }, 2, 3, { growth: 2, network: 2, happy: 1 }, { happy: 1 }),
+  c(3, '물놀이 챌린지', { happy: 1 }, 2, 3, { happy: 3, network: 2 }, { happy: 1 }),
+  c(4, '절벽 다이빙', { happy: 1 }, 2, 4, { happy: 3, growth: 2 }, { stamina: -1 }),
+  c(5, '화산 트레킹', { happy: 1 }, 2, 3, { growth: 3, happy: 2 }, { happy: 1 }),
+  c(6, '정원 축제 장터', { network: 1 }, 1, 3, { asset: 3, network: 2 }, { network: 1 }),
+  c(7, '설원 썰매 레이스', { happy: 1 }, 2, 3, { happy: 3, network: 2 }, { happy: 1 }),
+  c(8, '바닷가 산책 모임', { happy: 1 }, 1, 3, { network: 3, happy: 2 }, { happy: 1 }),
+  c(9, '구름 위 요가', { happy: 1, stamina: 1 }, 1, 3, { happy: 3, growth: 2 }, { happy: 1 }),
+  c(10, '노을 아래 작별 파티', { happy: 1 }, 1, 3, { network: 3, happy: 3 }, { happy: 1 }),
+  c(0, '서핑 체험', { happy: 1 }, 2, 4, { happy: 3, growth: 2 }, { stamina: -1 }),
+  c(0, '보물찾기', { growth: 1 }, 2, 3, { asset: 4, happy: 1 }, { happy: 1 }),
+  c(0, '요트 타기', { happy: 1 }, 2, 3, { happy: 2, network: 2, growth: 1 }, { happy: 1 }),
+  c(0, '캠프파이어 한마당', { network: 1 }, 1, 3, { network: 3, happy: 2 }, { happy: 1 }),
+  c(0, '스노클링', { happy: 1 }, 2, 3, { growth: 2, happy: 3 }, { happy: 1 }),
+  c(0, '해변 요리 대회', { asset: 1 }, 1, 3, { asset: 2, network: 2, happy: 1 }, { happy: 1 }),
+];
+export const ACTIVITY_CARDS: JourneyCard[] = ACT_RAW.map((card, i) => ({ ...card, id: `a-${i + 1}` }));
+
+// ───────── 트러블 카드: 참으면 손해, 맞서면 피할 수도 있다 ─────────
+const TRB_RAW: JourneyCard[] = [
+  c(1, '넘어져서 엉엉', { happy: -1 }, 1, 4, { growth: 1 }, { happy: -2 }),
+  c(2, '숙제를 못 했어', { growth: -1 }, 1, 4, { growth: 1, happy: 1 }, { growth: -1, happy: -1 }),
+  c(3, '친구와 다툼', { network: -1 }, 1, 4, { network: 1, growth: 1 }, { network: -2 }),
+  c(4, '시험을 망친 날', { happy: -1 }, 1, 4, { growth: 2 }, { happy: -1, growth: -1 }),
+  c(5, '월세 폭탄', { asset: -1 }, 1, 4, { asset: 1 }, { asset: -2 }),
+  c(6, '야근과 육아 사이', { happy: -1, stamina: -1 }, 1, 4, { happy: 1, network: 1 }, { happy: -2 }),
+  c(7, '건강 적신호', { stamina: -2 }, 1, 4, { happy: 1 }, { stamina: -2, happy: -1 }),
+  c(8, '무릎이 쑤신다', { stamina: -1, happy: -1 }, 1, 4, { happy: 1 }, { stamina: -2 }),
+  c(9, '낡은 지붕', { asset: -1 }, 1, 4, { network: 1 }, { asset: -2 }),
+  c(10, '마지막 후회', { happy: -1 }, 1, 4, { happy: 2 }, { happy: -2 }),
+  c(0, '갑작스런 폭풍', { stamina: -2 }, 1, 4, { growth: 1 }, { stamina: -2, happy: -1 }),
+  c(0, '길을 잃었다', { stamina: -1, happy: -1 }, 1, 4, { growth: 1 }, { stamina: -2 }),
+  c(0, '배가 고장났다', { asset: -1 }, 1, 4, { growth: 1 }, { asset: -2 }),
+  c(0, '해파리 출몰', { happy: -1 }, 1, 4, { happy: 1 }, { happy: -2 }),
+  c(0, '수상한 여행 사기', { asset: -1 }, 1, 4, { growth: 1 }, { asset: -2 }),
+  c(0, '안개 속 헤매기', { growth: -1 }, 1, 4, { growth: 1, happy: 1 }, { growth: -1, happy: -1 }),
+];
+export const TROUBLE_CARDS: JourneyCard[] = TRB_RAW.map((card, i) => ({ ...card, id: `t-${i + 1}` }));
+
+export const DECKS: Record<CardDeck, JourneyCard[]> = {
+  journey: CARDS,
+  activity: ACTIVITY_CARDS,
+  trouble: TROUBLE_CARDS,
+};

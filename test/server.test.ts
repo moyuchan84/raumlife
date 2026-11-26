@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import type { ClientMsg, LobbyState, ServerMsg, StateView } from '../src/shared/protocol';
+import { DEFAULT_AVATAR, sanitizeAvatar } from '../src/shared/avatar';
 
 process.env.PACE = '0';
 const { startServer } = await import('../src/server/index');
@@ -114,10 +115,12 @@ describe('로비', () => {
     expect(guest.lobby!.you).toBe(1);
     expect(guest.lobby!.seats[0]!.isHost).toBe(true);
 
-    // 말 중복 금지
-    const hostToken = host.lobby!.seats[0]!.token;
-    guest.send({ t: 'token', token: hostToken });
-    await guest.until(() => guest.errors.length > 0);
+    // 아바타: 범위를 벗어난 값은 서버가 고친다
+    guest.send({ t: 'avatar', avatar: { skin: 99, hairStyle: 2, face: -3, top: 1.5 } as never });
+    await host.until(() => host.lobby!.seats[1]!.avatar.hairStyle === 2);
+    expect(host.lobby!.seats[1]!.avatar.skin).toBe(DEFAULT_AVATAR.skin);
+    expect(host.lobby!.seats[1]!.avatar.face).toBe(DEFAULT_AVATAR.face);
+    expect(host.lobby!.seats[1]!.avatar.top).toBe(DEFAULT_AVATAR.top);
     // 손님은 설정 불가, 방장은 가능
     guest.send({ t: 'settings', settings: { endZone: 3 } });
     host.send({ t: 'settings', settings: { startZone: 3, endZone: 5, difficulty: 'hard' } });
@@ -133,8 +136,9 @@ describe('로비', () => {
     await host.until(() => host.lobby!.seats.length === 6);
     host.send({ t: 'addBot', kind: 'greedy' });
     await guest.until(() => guest.errors.some((e) => e.includes('설정')) );
-    const tokens = new Set(host.lobby!.seats.map((s) => s.token));
-    expect(tokens.size).toBe(6);
+    const names = new Set(host.lobby!.seats.map((s) => s.name));
+    expect(names.size).toBe(6); // 봇 이름이 겹치지 않는다
+    for (const seat of host.lobby!.seats) expect(sanitizeAvatar(seat.avatar)).toEqual(seat.avatar);
 
     // 없는 방
     const stranger = await TestClient.connect('낯선이');

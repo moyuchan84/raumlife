@@ -187,7 +187,7 @@ async function main() {
   line(`  방해 ${per('sabotages')} · 정상 바람 ${per('winds')} · 후발 CP 지급 ${per('catchUpCp')} · 마일스톤 보너스 ${per('milestoneBonus')}`);
   line();
   line('■ 칸 도착 횟수 (게임당)');
-  line('  ' + ['journey', 'camp', 'path', 'lodge', 'weather', 'milestone'].map((t) => `${t} ${per('tile:' + t)}`).join(' · '));
+  line('  ' + ['journey', 'activity', 'trouble', 'camp', 'path', 'lodge', 'weather', 'milestone'].map((t) => `${t} ${per('tile:' + t)}`).join(' · '));
   if (args.teams) {
     const tw = new Map<number, number>();
     for (const { res } of results) tw.set(res.winningTeam!, (tw.get(res.winningTeam!) ?? 0) + 1);

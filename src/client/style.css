@@ -144,3 +144,20 @@ input, select {
   .side { border-left: 0; border-top: 1px solid var(--line); }
   .stage-wrap { height: 58vh; }
 }
+
+/* ── 캐릭터 만들기 ── */
+.creator { display: grid; grid-template-columns: 200px 1fr; gap: 16px; align-items: start; }
+.cpreview { display: flex; flex-direction: column; align-items: center; gap: 8px; background: linear-gradient(#cfeaf7, #eaf7ee); border-radius: var(--radius); padding: 10px 6px 12px; }
+.cpreview img { border-radius: 50%; }
+.cparts { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.crow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.clabel { width: 64px; font-size: 13px; color: var(--muted); flex: none; }
+.swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.sw { width: 26px; height: 26px; border-radius: 50%; padding: 0; border: 2px solid var(--line); }
+.sw.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.avatar-img { border-radius: 50%; background: linear-gradient(#cfeaf7, #eaf7ee); flex: none; }
+.seat .tok { width: 52px; }
+.seat .tok img { display: block; }
+.pl .tk img { display: block; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+@media (max-width: 560px) { .creator { grid-template-columns: 1fr; } }

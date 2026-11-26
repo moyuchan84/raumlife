@@ -10,7 +10,17 @@ export const STAT_LABEL: Record<StatKey, string> = {
 /** 효과: 스탯 증감 + 체력(stamina) + 기회 포인트(cp) */
 export type Effect = Partial<Record<StatKey, number>> & { stamina?: number; cp?: number };
 
-export type TileType = 'journey' | 'camp' | 'path' | 'lodge' | 'fork' | 'weather' | 'milestone' | 'summit';
+export type TileType =
+  | 'journey'
+  | 'activity' // 액티비티: 참가하면 보상이 큰 칸
+  | 'trouble' // 트러블: 부정적 사건. 맞서면 피할 수도 있다
+  | 'camp'
+  | 'path'
+  | 'lodge'
+  | 'fork'
+  | 'weather'
+  | 'milestone'
+  | 'summit'; // 종착지 (마지막 섬의 등대)
 
 export interface Tile {
   id: number;
@@ -35,6 +45,8 @@ export interface Challenge {
   win: Effect;
   lose: Effect;
 }
+export type CardDeck = 'journey' | 'activity' | 'trouble';
+
 export interface JourneyCard {
   id: string;
   /** 0 이면 모든 구간 공통 */
@@ -95,6 +107,8 @@ export interface Tuning {
   milestoneThresholdPerZone: number;
   /** 한 판 시간 추정용 (초/턴) */
   secondsPerTurn: number;
+  /** 고른 주사위 눈에 더해지는 이동 칸 수 (칸이 늘어난 만큼 보정) */
+  moveBonus: number;
 }
 
 export interface PlayerState {
@@ -174,7 +188,7 @@ export type GameEvent =
   | { t: 'diceChosen'; player: number; pick: 0 | 1; move: number; cpGain: number }
   | { t: 'move'; player: number; path: number[] }
   | { t: 'tile'; player: number; tile: number; tileType: TileType; delta: Effect }
-  | { t: 'card'; player: number; card: JourneyCard; choice: 'safe' | 'challenge'; boost: number; roll: number | null; success: boolean | null; rerolled: boolean }
+  | { t: 'card'; player: number; deck: CardDeck; card: JourneyCard; choice: 'safe' | 'challenge'; boost: number; roll: number | null; success: boolean | null; rerolled: boolean }
   | { t: 'weather'; player: number; card: WeatherCard }
   | { t: 'pathOption'; player: number; zone: number; option: number }
   | { t: 'lodge'; player: number }

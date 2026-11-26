@@ -25,7 +25,7 @@ const URL = process.env.URL || 'http://localhost:3111';
   await page.click('button.chip:has-text("꼬마 코스")');
   await page.waitForTimeout(300);
   await page.screenshot({ path: OUT + '/2-lobby.png', fullPage: true });
-  await page.click('text=등반 시작');
+  await page.click('text=여행 시작');
   await page.waitForSelector('.game');
 
   // 결정 UI 가 나타나면 자동으로 첫 번째 primary 버튼(없으면 첫 버튼)을 누른다

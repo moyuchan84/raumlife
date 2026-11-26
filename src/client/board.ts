@@ -1,26 +1,32 @@
 import type { Tile, TileType } from '../engine';
 import { ZONES } from '../engine';
-import { TOKENS, type PlayerView, type TokenId } from '../shared/protocol';
+import type { PlayerView } from '../shared/protocol';
+import { SEAT_COLORS } from '../shared/avatar';
+import { avatarImageEl } from './avatar2d';
 
 export const TILE_ICON: Record<TileType, string> = {
-  journey: '🌲',
+  journey: '🌴',
+  activity: '🏄',
+  trouble: '⚠️',
   camp: '⛺',
   path: '🪧',
   lodge: '🏠',
   fork: '🔀',
   weather: '🌦️',
   milestone: '🚩',
-  summit: '🏔️',
+  summit: '🗼',
 };
 export const TILE_NAME: Record<TileType, string> = {
   journey: '여정',
+  activity: '액티비티',
+  trouble: '트러블',
   camp: '캠프',
   path: '진로',
   lodge: '보금자리',
   fork: '갈림길',
   weather: '날씨',
   milestone: '이정표',
-  summit: '정상',
+  summit: '종착지',
 };
 
 const ZONE_COLORS = [
@@ -111,8 +117,6 @@ export interface DrawOptions {
   dpr: number;
 }
 
-const tokenEmoji = (id: TokenId) => TOKENS.find((t) => t.id === id)!.emoji;
-
 export function draw(ctx: CanvasRenderingContext2D, o: DrawOptions) {
   const { layout, tiles } = o;
   const dark = matchMedia('(prefers-color-scheme: dark)').matches;
@@ -135,7 +139,7 @@ export function draw(ctx: CanvasRenderingContext2D, o: DrawOptions) {
     ctx.fillText(info.name, 14, row.y0 + 24);
     ctx.font = '12px system-ui, sans-serif';
     ctx.globalAlpha = 0.75;
-    ctx.fillText(`${info.ages}세 · ${info.scenery}`, 14, row.y0 + 44);
+    ctx.fillText(`${info.island} · ${info.ages}세`, 14, row.y0 + 44);
     ctx.globalAlpha = 1;
     ctx.textAlign = 'center';
   }
@@ -204,23 +208,35 @@ export function draw(ctx: CanvasRenderingContext2D, o: DrawOptions) {
       x += Math.cos(ang) * rad;
       y += Math.sin(ang) * rad - 4;
     }
+    const col = SEAT_COLORS[p.id % SEAT_COLORS.length]!;
+    const sz = p.id === o.me ? 34 : 30;
     if (p.id === o.current) {
       ctx.beginPath();
-      ctx.arc(x, y + 2, 15, 0, Math.PI * 2);
-      ctx.fillStyle = '#2f80ed33';
+      ctx.arc(x, y - 2, sz / 2 + 6, 0, Math.PI * 2);
+      ctx.fillStyle = col + '44';
       ctx.fill();
-      ctx.strokeStyle = '#2f80ed';
-      ctx.lineWidth = 2;
-      ctx.stroke();
     }
-    ctx.font = `${(p.id === o.me ? 24 : 21) - (group.length > 1 ? 3 : 0)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
-    ctx.fillStyle = '#000';
-    ctx.fillText(tokenEmoji(p.token), x, y + 2);
-    if (p.id === o.me) {
-      ctx.font = '700 10px system-ui, sans-serif';
-      ctx.fillStyle = '#2f80ed';
-      ctx.fillText('나', x, y - 17);
+    ctx.beginPath();
+    ctx.arc(x, y - 2, sz / 2 + 2, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.fill();
+    const img = avatarImageEl(p.avatar, 64);
+    if (img.complete && img.naturalWidth) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y - 2, sz / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = '#e6f4fb';
+      ctx.fillRect(x - sz / 2, y - 2 - sz / 2, sz, sz);
+      ctx.drawImage(img, x - sz / 2, y - 2 - sz / 2, sz, sz);
+      ctx.restore();
     }
+    ctx.font = '700 10px system-ui, sans-serif';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#fffdf8';
+    ctx.strokeText(p.id === o.me ? `${p.name} (나)` : p.name, x, y - sz / 2 - 9);
+    ctx.fillStyle = col;
+    ctx.fillText(p.id === o.me ? `${p.name} (나)` : p.name, x, y - sz / 2 - 9);
   }
 }
 

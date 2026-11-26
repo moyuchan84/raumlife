@@ -3,9 +3,9 @@ import { ZONES } from './data/zones';
 
 /**
  * 선택한 구간(startZone..endZone)으로 산길 그래프를 만든다.
- * 구간 템플릿 (12칸 구간 / 8칸 구간):
- *   앞길 → 갈림길 → [둘레길 | 지름길] → 뒷길 → 이정표
- * 마지막 구간의 이정표는 정상(summit)이다.
+ * 구간(=섬) 템플릿 (16칸 구간 / 10칸 구간):
+ *   앞길 → 갈림길 → [해안길(길다) | 샛길(지름길, 짧다)] → 뒷길 → 이정표
+ * 마지막 구간의 이정표는 종착지(summit, 등대)이다.
  */
 export function buildBoard(startZone: number, endZone: number): Board {
   if (startZone < 1 || endZone > ZONES.length || startZone > endZone) {
@@ -31,17 +31,19 @@ export function buildBoard(startZone: number, endZone: number): Board {
     const isLastZone = z === endZone;
     const tailType: TileType = isLastZone ? 'summit' : 'milestone';
 
-    // 칸 id가 진행 방향으로 증가하도록 순서대로 생성한다 (lead → fork → 둘레길 → 지름길 → tail)
-    const std = info.length === 12;
-    const lead = chain(z, std ? ['journey', 'path', 'journey'] : ['journey', 'camp']);
+    // 칸 id가 진행 방향으로 증가하도록 순서대로 생성한다 (lead → fork → 해안길 → 지름길 → tail)
+    const std = info.length === 16;
+    const lead = chain(z, std ? ['journey', 'path', 'journey', 'activity'] : ['journey', 'camp', 'activity']);
     const fork = add(z, 'fork');
     const longRoute = chain(
       z,
-      std ? ['journey', 'camp', 'journey', 'lodge', 'weather'] : ['journey', 'journey', 'camp'],
+      std
+        ? ['journey', 'camp', 'trouble', 'lodge', 'weather', 'activity', 'journey']
+        : ['journey', 'journey', 'camp'],
       { route: 'long' },
     );
-    const shortRoute = chain(z, std ? ['journey', 'journey'] : ['journey'], { route: 'short', risky: true });
-    const tail = chain(z, std ? ['journey', 'camp', tailType] : ['journey', tailType]);
+    const shortRoute = chain(z, std ? ['journey', 'activity', 'journey'] : ['journey'], { route: 'short', risky: true });
+    const tail = chain(z, std ? ['journey', 'trouble', 'camp', tailType] : ['journey', 'trouble', tailType]);
 
     if (first < 0) first = lead[0]!;
     if (prevTail !== null) link(prevTail, lead[0]!);

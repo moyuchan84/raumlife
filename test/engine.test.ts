@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Game, buildBoard, distancesToSummit, goalCompletion, DEFAULT_TUNING } from '../src/engine';
+import { Game, buildBoard, distancesToSummit, goalCompletion, DEFAULT_TUNING, DECKS } from '../src/engine';
 import type { Controller, GameConfig, GameState, JourneyCard } from '../src/engine';
 import { createBot } from '../src/ai/bots';
 
@@ -44,7 +44,7 @@ describe('보드', () => {
       }
     }
   });
-  it('갈림길은 둘레길(0)·지름길(1) 두 갈래이고 지름길이 더 짧다', async () => {
+  it('갈림길은 해안길(0)·지름길(1) 두 갈래이고 지름길이 더 짧다', async () => {
     const board = buildBoard(1, 10);
     const { min, max } = distancesToSummit(board);
     const forks = board.tiles.filter((t) => t.type === 'fork');
@@ -57,15 +57,55 @@ describe('보드', () => {
       expect(min[f.next[1]!]!).toBeLessThan(max[f.next[0]!]!);
     }
   });
-  it('전 생애 둘레길 길이는 112칸, 첫/끝 구간은 8칸', async () => {
+  it('전 생애 해안길 길이는 148칸, 첫/끝 구간은 10칸', async () => {
     const board = buildBoard(1, 10);
     const { max } = distancesToSummit(board);
-    expect(max[board.start]! + 1).toBe(8 + 8 * 12 + 8);
+    expect(max[board.start]! + 1).toBe(10 + 8 * 16 + 10);
   });
   it('잘못된 구간은 거부', async () => {
     expect(() => buildBoard(5, 3)).toThrow();
     expect(() => buildBoard(0, 3)).toThrow();
     expect(() => buildBoard(1, 11)).toThrow();
+  });
+});
+
+describe('새 칸과 카드', () => {
+  it('보드에 액티비티·트러블 칸이 있고, 지름길은 액티비티를 지난다', () => {
+    const board = buildBoard(1, 10);
+    const types = new Set(board.tiles.map((t) => t.type));
+    for (const t of ['journey', 'activity', 'trouble', 'camp', 'path', 'lodge', 'fork', 'weather', 'milestone', 'summit']) expect(types.has(t as never)).toBe(true);
+    expect(board.tiles.filter((t) => t.route === 'short' && t.type === 'activity').length).toBe(8);
+  });
+  it('모든 구간에 각 덱의 전용 카드가 있고, 카드 효과가 설계 의도에 맞다', () => {
+    for (let z = 1; z <= 10; z++) {
+      for (const deck of ['journey', 'activity', 'trouble'] as const) {
+        expect(DECKS[deck].filter((c) => c.zone === z).length, `${deck} zone ${z}`).toBeGreaterThanOrEqual(1);
+        expect(DECKS[deck].filter((c) => c.zone === 0).length).toBeGreaterThanOrEqual(5); // 공통 카드
+      }
+    }
+    const sum = (e: Record<string, number | undefined>) => Object.values(e).reduce<number>((a, b) => a + (b ?? 0), 0);
+    for (const c of DECKS.trouble) {
+      expect(sum(c.safe), c.title).toBeLessThan(0); // 참으면 손해
+      expect(sum(c.challenge.lose), c.title).toBeLessThanOrEqual(sum(c.safe)); // 맞서다 실패하면 더 아프다
+    }
+    for (const c of DECKS.activity) {
+      expect(sum(c.challenge.win), c.title).toBeGreaterThanOrEqual(4); // 참가하면 보상이 크다
+      expect(sum(c.safe), c.title).toBeGreaterThan(0);
+    }
+  });
+  it('주사위 눈에 이동 보너스가 더해진다', async () => {
+    const game = new Game(cfg({ seed: 3, players: 1, startZone: 1, endZone: 3 }));
+    const c = new SafeCtrl();
+    const start = game.state.players[0]!.pos;
+    await game.playRound([c]);
+    const dice = c.lastDice!;
+    const move = Math.max(...dice) + game.state.tuning.moveBonus;
+    const { min } = distancesToSummit(game.state.board);
+    // 1턴 후 정상까지 거리가 정확히 move 만큼 줄었다 (갈림길 포함 해안길 선택)
+    const before = distancesToSummit(game.state.board).max[start]!;
+    const after = distancesToSummit(game.state.board).max[game.state.players[0]!.pos]!;
+    expect(before - after).toBe(move);
+    expect(min.length).toBeGreaterThan(0);
   });
 });
 

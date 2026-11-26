@@ -36,7 +36,7 @@ function dist(board: Board) {
   return d;
 }
 /** 평균적으로 한 라운드에 이동하는 칸 수 (큰 주사위를 골랐을 때) */
-const TILES_PER_ROUND = 4;
+const TILES_PER_ROUND = 5;
 
 /** 마감 카운트다운이 시작됐는데 지금 속도로는 정상에 못 갈 것 같으면 true */
 function mustRush(s: GameState, me: number): boolean {
@@ -80,7 +80,7 @@ export class HeuristicBot implements Controller {
 
   chooseDie(s: GameState, me: number, dice: [number, number]): 0 | 1 {
     const score = (pick: 0 | 1) => {
-      const move = dice[pick];
+      const move = dice[pick] + s.tuning.moveBonus;
       const left = pick === 0 ? dice[1] : dice[0];
       const cp = (left >= 4 ? 1 : 0) + (dice[0] === dice[1] ? 1 : 0);
       const stepValue = mustRush(s, me) ? 8 : this.style.stepValue;

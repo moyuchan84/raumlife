@@ -1,14 +1,5 @@
-import type { Difficulty, Effect, GameEvent, GameResult, JourneyCard, StatKey, Tile } from '../engine';
-
-export const TOKENS = [
-  { id: 'cat', emoji: '🐱', label: '고양이' },
-  { id: 'bear', emoji: '🐻', label: '곰' },
-  { id: 'robot', emoji: '🤖', label: '로봇' },
-  { id: 'fox', emoji: '🦊', label: '여우' },
-  { id: 'penguin', emoji: '🐧', label: '펭귄' },
-  { id: 'dragon', emoji: '🐲', label: '드래곤' },
-] as const;
-export type TokenId = (typeof TOKENS)[number]['id'];
+import type { CardDeck, Difficulty, Effect, GameEvent, GameResult, JourneyCard, StatKey, Tile } from '../engine';
+import type { Avatar } from './avatar';
 
 export const BOT_KINDS = [
   { id: 'random', label: '쉬움' },
@@ -30,7 +21,7 @@ export interface RoomSettings {
 export interface SeatView {
   kind: 'human' | 'bot';
   name: string;
-  token: TokenId;
+  avatar: Avatar;
   team: number;
   botKind?: string;
   connected: boolean;
@@ -48,7 +39,7 @@ export interface LobbyState {
 export interface PlayerView {
   id: number;
   name: string;
-  token: TokenId;
+  avatar: Avatar;
   team: number;
   isBot: boolean;
   connected: boolean;
@@ -94,9 +85,9 @@ export interface StartedInfo {
 
 // ───────── 결정 요청 ─────────
 export type Ask =
-  | { kind: 'die'; dice: [number, number]; cp: number; maxCp: number }
+  | { kind: 'die'; dice: [number, number]; bonus: number; cp: number; maxCp: number }
   | { kind: 'path'; options: { tileId: number; route: 'long' | 'short' | null; distance: number }[]; stamina: number }
-  | { kind: 'card'; card: JourneyCard; canSafe: boolean; stamina: number; cp: number }
+  | { kind: 'card'; deck: CardDeck; card: JourneyCard; canSafe: boolean; stamina: number; cp: number }
   | { kind: 'boost'; card: JourneyCard; cp: number }
   | { kind: 'reroll'; card: JourneyCard; roll: number; cost: number }
   | { kind: 'pathOption'; zone: number; names: string[]; effects: Effect[]; available: boolean[] }
@@ -105,12 +96,12 @@ export type Ask =
 
 // ───────── 메시지 ─────────
 export type ClientMsg =
-  | { t: 'hello'; name: string; session?: string }
+  | { t: 'hello'; name: string; session?: string; avatar?: Avatar }
   | { t: 'createRoom' }
   | { t: 'joinRoom'; code: string }
   | { t: 'leaveRoom' }
   | { t: 'settings'; settings: Partial<RoomSettings> }
-  | { t: 'token'; token: TokenId }
+  | { t: 'avatar'; avatar: Avatar }
   | { t: 'addBot'; kind: string }
   | { t: 'removeSeat'; seat: number }
   | { t: 'setTeam'; seat: number; team: number }

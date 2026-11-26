@@ -1,4 +1,5 @@
 import type {
+  CardDeck,
   Effect,
   GameConfig,
   GameEvent,
@@ -16,7 +17,7 @@ import { STAT_KEYS } from './types';
 import type { Controller } from './controller';
 import { Rng } from './rng';
 import { buildBoard } from './board';
-import { CARDS } from './data/cards';
+import { DECKS } from './data/cards';
 import { WEATHER } from './data/weather';
 import { PATH_ARCHETYPES } from './data/zones';
 import { DEFAULT_TUNING } from './tuning';
@@ -38,8 +39,8 @@ export interface GameOptions {
 export class Game {
   readonly state: GameState;
   private rng: Rng;
-  private journeyDecks = new Map<number, JourneyCard[]>();
-  private journeyDiscard = new Map<number, JourneyCard[]>();
+  private journeyDecks = new Map<string, JourneyCard[]>();
+  private journeyDiscard = new Map<string, JourneyCard[]>();
   private weatherDeck: WeatherCard[] = [];
   private countdownEndsRound: number | null = null;
   private metrics: Record<string, number> = {};
@@ -123,19 +124,20 @@ export class Game {
     return (g.reduce((a, goal) => a + goalCompletion(p, goal), 0) / g.length) * 100;
   }
 
-  private drawJourney(zone: number): JourneyCard {
-    let deck = this.journeyDecks.get(zone) ?? [];
-    if (deck.length === 0) {
-      const discard = this.journeyDiscard.get(zone) ?? [];
-      const pool = discard.length ? discard : CARDS.filter((c) => c.zone === 0 || c.zone === zone);
-      deck = this.rng.shuffle(pool);
-      this.journeyDiscard.set(zone, []);
-      this.journeyDecks.set(zone, deck);
+  private drawCard(deck: CardDeck, zone: number): JourneyCard {
+    const key = `${deck}:${zone}`;
+    let cards = this.journeyDecks.get(key) ?? [];
+    if (cards.length === 0) {
+      const discard = this.journeyDiscard.get(key) ?? [];
+      const pool = discard.length ? discard : DECKS[deck].filter((c) => c.zone === 0 || c.zone === zone);
+      cards = this.rng.shuffle(pool);
+      this.journeyDiscard.set(key, []);
+      this.journeyDecks.set(key, cards);
     }
-    const card = deck.pop()!;
-    const d = this.journeyDiscard.get(zone) ?? [];
+    const card = cards.pop()!;
+    const d = this.journeyDiscard.get(key) ?? [];
     d.push(card);
-    this.journeyDiscard.set(zone, d);
+    this.journeyDiscard.set(key, d);
     return card;
   }
 
@@ -229,7 +231,7 @@ export class Game {
     const dice: [number, number] = [this.rng.die(), this.rng.die()];
     await this.emit({ t: 'dice', player: idx, dice });
     const pick = await ctrl.chooseDie(s, idx, dice);
-    const move = dice[pick];
+    const move = dice[pick] + s.tuning.moveBonus;
     const left = pick === 0 ? dice[1] : dice[0];
     let cpGain = 0;
     if (left >= 4) cpGain++;
@@ -309,6 +311,8 @@ export class Game {
     this.m(`tile:${tile.type}`);
     switch (tile.type) {
       case 'journey':
+      case 'activity':
+      case 'trouble':
         return this.resolveJourney(p, ctrl, tile);
       case 'camp': {
         this.applyEffect(p, { stamina: 2 });
@@ -353,7 +357,8 @@ export class Game {
 
   private async resolveJourney(p: PlayerState, ctrl: Controller, tile: Tile): Promise<void> {
     const s = this.state;
-    const card = this.drawJourney(tile.zone);
+    const deck = tile.type as CardDeck;
+    const card = this.drawCard(deck, tile.zone);
     const cost = card.challenge.staminaCost;
     const canSafe = !tile.risky;
     let choice: 'safe' | 'challenge' = await ctrl.chooseCardOption(s, p.id, card, canSafe);
@@ -363,7 +368,7 @@ export class Game {
     if (choice === 'safe') {
       this.applyEffect(p, card.safe);
       this.m('safeChosen');
-      await this.emit({ t: 'card', player: p.id, card, choice, boost: 0, roll: null, success: null, rerolled: false });
+      await this.emit({ t: 'card', player: p.id, deck, card, choice, boost: 0, roll: null, success: null, rerolled: false });
       return;
     }
     this.m('challengeTried');
@@ -388,7 +393,7 @@ export class Game {
     } else {
       this.applyEffect(p, card.challenge.lose);
     }
-    await this.emit({ t: 'card', player: p.id, card, choice, boost, roll, success: ok, rerolled });
+    await this.emit({ t: 'card', player: p.id, deck, card, choice, boost, roll, success: ok, rerolled });
   }
 
   private async resolvePath(p: PlayerState, ctrl: Controller, tile: Tile): Promise<void> {

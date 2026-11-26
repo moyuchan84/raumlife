@@ -6,5 +6,5 @@ export * from './goals';
 export * from './tuning';
 export { Game, LODGE_COST, LODGE_EFFECT, SABOTAGE_EFFECT, WIND_EFFECT } from './game';
 export { ZONES, PATH_ARCHETYPES } from './data/zones';
-export { CARDS } from './data/cards';
+export { CARDS, ACTIVITY_CARDS, TROUBLE_CARDS, DECKS } from './data/cards';
 export { WEATHER } from './data/weather';

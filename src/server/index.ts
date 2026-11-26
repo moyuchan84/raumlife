@@ -5,11 +5,13 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMsg, ServerMsg } from '../shared/protocol';
+import { DEFAULT_AVATAR, sanitizeAvatar, type Avatar } from '../shared/avatar';
 import { Room, type Hub } from './room';
 
 interface Client {
   session: string;
   name: string;
+  avatar: Avatar;
   ws: WebSocket | null;
   room: Room | null;
 }
@@ -85,15 +87,16 @@ export function startServer(port = Number(process.env.PORT ?? 3000), staticDir?:
           if (existing.ws && existing.ws !== ws) existing.ws.close(); // 다른 탭/기기에서 다시 접속한 경우만
           existing.ws = ws;
           existing.name = name;
+          if (msg.avatar) existing.avatar = sanitizeAvatar(msg.avatar);
           client = existing;
         } else {
           const session = randomBytes(12).toString('hex');
-          client = { session, name, ws, room: null };
+          client = { session, name, avatar: msg.avatar ? sanitizeAvatar(msg.avatar) : { ...DEFAULT_AVATAR }, ws, room: null };
           clients.set(session, client);
         }
         sendTo(client, { t: 'welcome', session: client.session, name });
         if (client.room) {
-          const e = client.room.join(client.session, name); // 재접속
+          const e = client.room.join(client.session, name, client.avatar); // 재접속
           if (e) err(client, e);
         } else {
           sendTo(client, { t: 'lobby', room: null });
@@ -108,14 +111,14 @@ export function startServer(port = Number(process.env.PORT ?? 3000), staticDir?:
           const room = new Room(newCode(), hub, onEmpty);
           rooms.set(room.code, room);
           c.room = room;
-          room.join(c.session, c.name);
+          room.join(c.session, c.name, c.avatar);
           break;
         }
         case 'joinRoom': {
           if (c.room) return;
           const room = rooms.get(String(msg.code ?? '').toUpperCase().trim());
           if (!room) return err(c, '그런 방이 없습니다');
-          const e = room.join(c.session, c.name);
+          const e = room.join(c.session, c.name, c.avatar);
           if (e) return err(c, e);
           c.room = room;
           break;
@@ -133,11 +136,10 @@ export function startServer(port = Number(process.env.PORT ?? 3000), staticDir?:
           if (e) err(c, e);
           break;
         }
-        case 'token': {
-          const e = c.room?.setToken(c.session, msg.token);
-          if (e) err(c, e);
+        case 'avatar':
+          c.avatar = sanitizeAvatar(msg.avatar);
+          c.room?.setAvatar(c.session, c.avatar);
           break;
-        }
         case 'addBot': {
           const e = c.room?.addBot(c.session, msg.kind);
           if (e) err(c, e);

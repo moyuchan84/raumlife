@@ -2,18 +2,19 @@ import type { GameEvent, GameResult, StatKey } from '../engine';
 import { ZONES } from '../engine';
 import {
   BOT_KINDS,
-  TOKENS,
   type Ask,
   type LobbyState,
   type RoomSettings,
   type ServerMsg,
   type StartedInfo,
   type StateView,
-  type TokenId,
 } from '../shared/protocol';
 import { clear, fmtEffect, h, pct } from './dom';
 import { draw, layoutBoard, TILE_NAME, type Layout, type Pt } from './board';
 import { Net } from './net';
+import { DEFAULT_AVATAR, SEAT_COLORS, sanitizeAvatar, type Avatar } from '../shared/avatar';
+import { avatarImage } from './avatar2d';
+import { createCreator } from './creator';
 import { createBoard3D, type Board3D } from './board3d';
 
 // ───────── 앱 상태 ─────────
@@ -34,8 +35,17 @@ const store = {
   },
 };
 
+function loadAvatar(): Avatar {
+  try {
+    return sanitizeAvatar(JSON.parse(store.get('lh.avatar') || 'null'));
+  } catch {
+    return { ...DEFAULT_AVATAR };
+  }
+}
+
 const S = {
   name: store.get('lh.name'),
+  avatar: loadAvatar(),
   session: store.get('lh.session'),
   lobby: null as LobbyState | null,
   info: null as StartedInfo | null,
@@ -50,16 +60,28 @@ const S = {
 const app = document.getElementById('app')!;
 const connEl = document.getElementById('conn')!;
 
-const net = new Net(() => ({ t: 'hello', name: S.name || '손님', ...(S.session ? { session: S.session } : {}) }));
+const net = new Net(() => ({ t: 'hello', name: S.name || '손님', avatar: S.avatar, ...(S.session ? { session: S.session } : {}) }));
 net.onStatus = (on) => connEl.classList.toggle('hidden', on);
 net.onMsg = onMsg;
 
-function tokenEmoji(id: TokenId) {
-  return TOKENS.find((t) => t.id === id)!.emoji;
+function avatarEl(a: Avatar, size = 40, ring?: string): HTMLElement {
+  return h('img', {
+    class: 'avatar-img',
+    src: avatarImage(a, size),
+    width: size,
+    height: size,
+    alt: '',
+    style: ring ? { border: `3px solid ${ring}` } : undefined,
+  });
 }
 function who(id: number): string {
   const p = S.state?.players[id];
-  return p ? `${tokenEmoji(p.token)} ${p.name}` : `P${id + 1}`;
+  return p ? p.name : `P${id + 1}`;
+}
+function onAvatar(a: Avatar) {
+  S.avatar = a;
+  store.set('lh.avatar', JSON.stringify(a));
+  net.send({ t: 'avatar', avatar: a });
 }
 
 // ───────── 메시지 처리 ─────────
@@ -164,10 +186,14 @@ function viewHome(): HTMLElement {
     net.send({ t: 'hello', name: S.name, session: S.session });
   };
   return h('div', { class: 'center' },
-    h('div', { class: 'hero' }, h('h1', null, '🏔️ 인생 등산'), h('p', null, '모두가 같은 목표를 향해 인생의 산을 오른다. 가장 가까이 닿은 사람이 이긴다.')),
+    h('div', { class: 'hero' }, h('h1', null, '🏝️ 인생 섬 여행'), h('p', null, '모두가 같은 목표를 품고 인생의 섬들을 건너는 여행. 목표에 가장 가까이 닿은 사람이 이긴다.')),
     h('div', { class: 'card' },
       h('h2', null, '이름'),
       h('div', { class: 'row' }, nameIn),
+    ),
+    h('div', { class: 'card' },
+      h('h2', null, '내 캐릭터'),
+      createCreator(S.avatar, onAvatar),
     ),
     h('div', { class: 'card' },
       h('h2', null, '방 만들기 / 입장'),
@@ -183,9 +209,10 @@ function viewHome(): HTMLElement {
       h('b', null, '규칙 한눈에'),
       h('ul', { style: { margin: '6px 0 0', paddingLeft: '18px' } },
         h('li', null, '주사위 2개 중 하나로 이동하고, 안 쓴 눈이 4 이상이면 ✨기회 포인트를 얻어요.'),
-        h('li', null, '칸마다 카드를 뽑아 안전하게 갈지 도전할지 고릅니다. 지름길은 도전만 가능해요.'),
+        h('li', null, '칸마다 카드를 뽑아 안전하게 갈지 도전할지 고릅니다. 🏄 액티비티는 보상이 크고, ⚠️ 트러블은 맞서야 피할 수 있어요.'),
+        h('li', null, '섬마다 해안길(안전하지만 길다)과 지름길(섬을 가로지르지만 도전만 가능)이 갈라집니다.'),
         h('li', null, '모두에게 공개된 목표(자산·행복·인맥·성장 등)의 달성률이 가장 높은 사람이 승리!'),
-        h('li', null, '누군가 정상에 닿으면 마감 카운트다운이 시작됩니다.'),
+        h('li', null, '누군가 종착지(등대)에 닿으면 마감 카운트다운이 시작됩니다.'),
       ),
     ),
   );
@@ -197,7 +224,7 @@ const PRESETS = [
   { label: '🎒 청춘 코스', sub: '중학생~성인 초반', s: 3, e: 5 },
   { label: '🏢 어른 코스', sub: '성인 초반~말기', s: 5, e: 7 },
   { label: '🍂 노년 코스', sub: '노년 초반~끝', s: 8, e: 10 },
-  { label: '⛰️ 전 생애', sub: '갓난아기~노년 끝', s: 1, e: 10 },
+  { label: '🌏 전 생애', sub: '갓난아기~노년 끝', s: 1, e: 10 },
 ];
 const DIFFS: { id: RoomSettings['difficulty']; label: string }[] = [
   { id: 'easy', label: '쉬움 (목표 1개)' },
@@ -206,7 +233,7 @@ const DIFFS: { id: RoomSettings['difficulty']; label: string }[] = [
   { id: 'extreme', label: '극한 (목표 5개)' },
 ];
 
-let paletteOpen = false;
+let creatorOpen = false;
 
 function viewLobby(l: LobbyState): HTMLElement {
   const me = l.you;
@@ -219,8 +246,6 @@ function viewLobby(l: LobbyState): HTMLElement {
   const zoneSel = (value: number, onchange: (v: number) => void) =>
     h('select', { disabled: !amHost, onchange: (e: Event) => onchange(Number((e.target as HTMLSelectElement).value)) },
       ZONES.map((z) => h('option', { value: z.id, selected: z.id === value }, `${z.id}. ${z.name} (${z.ages})`)));
-
-  const usedTokens = new Set(l.seats.map((s) => s.token));
 
   return h('div', { class: 'center' },
     h('div', { class: 'hero' },
@@ -238,9 +263,9 @@ function viewLobby(l: LobbyState): HTMLElement {
         h('div', { class: 'seat' },
           h('button', {
             class: `tok ${i === me ? 'mine' : ''}`,
-            title: i === me ? '눌러서 말 바꾸기' : '',
-            onclick: () => { if (i === me) { paletteOpen = !paletteOpen; render(); } },
-          }, tokenEmoji(s.token)),
+            title: i === me ? '눌러서 내 캐릭터 꾸미기' : '',
+            onclick: () => { if (i === me) { creatorOpen = !creatorOpen; render(); } },
+          }, avatarEl(s.avatar, 48, SEAT_COLORS[i])),
           h('div', { class: 'grow' },
             h('div', null, s.name, ' ', i === me ? h('span', { class: 'muted' }, '(나)') : null, ' ', s.isHost ? h('span', { class: 'badge host' }, '방장') : null, ' ', !s.connected ? h('span', { class: 'badge' }, '연결 끊김') : null),
             h('div', { class: 'muted', style: { fontSize: '12px' } }, s.kind === 'bot' ? '컴퓨터' : '사람'),
@@ -255,10 +280,7 @@ function viewLobby(l: LobbyState): HTMLElement {
             : null,
           amHost && i !== me ? h('button', { class: 'small danger', onclick: () => net.send({ t: 'removeSeat', seat: i }) }, '내보내기') : null,
         )),
-      paletteOpen
-        ? h('div', { class: 'palette' }, TOKENS.map((t) =>
-            h('button', { disabled: usedTokens.has(t.id) && l.seats[me]?.token !== t.id, title: t.label, onclick: () => { paletteOpen = false; net.send({ t: 'token', token: t.id }); } }, t.emoji)))
-        : null,
+      creatorOpen ? h('div', { style: { marginTop: '10px' } }, createCreator(S.avatar, onAvatar)) : null,
       amHost && l.seats.length < 6
         ? h('div', { class: 'row', style: { marginTop: '10px' } },
             h('span', { class: 'muted' }, '컴퓨터 추가:'),
@@ -266,7 +288,7 @@ function viewLobby(l: LobbyState): HTMLElement {
         : null,
     ),
     h('div', { class: 'card' },
-      h('h2', null, '코스 (오를 인생 구간)'),
+      h('h2', null, '코스 (건너갈 인생의 섬)'),
       h('div', { class: 'chips' }, PRESETS.map((p) =>
         h('button', { class: `chip ${st.startZone === p.s && st.endZone === p.e ? 'on' : ''}`, disabled: !amHost, onclick: () => set({ startZone: p.s, endZone: p.e }) }, p.label, h('small', null, p.sub)))),
       h('div', { class: 'row', style: { marginTop: '10px' } },
@@ -288,7 +310,7 @@ function viewLobby(l: LobbyState): HTMLElement {
     h('div', { class: 'row between', style: { marginTop: '16px' } },
       h('div', { id: 'err', class: 'err' }, S.error),
       amHost
-        ? h('button', { class: 'primary', style: { fontSize: '17px', padding: '12px 28px' }, disabled: l.seats.length < 2, onclick: () => net.send({ t: 'start' }) }, l.seats.length < 2 ? '2명 이상 필요' : '🏔️ 등반 시작')
+        ? h('button', { class: 'primary', style: { fontSize: '17px', padding: '12px 28px' }, disabled: l.seats.length < 2, onclick: () => net.send({ t: 'start' }) }, l.seats.length < 2 ? '2명 이상 필요' : '🏝️ 여행 시작')
         : h('span', { class: 'muted' }, '방장이 시작하기를 기다리는 중…'),
     ),
   );
@@ -318,6 +340,7 @@ interface GameUI {
   mode: '2d' | '3d';
 }
 let G: GameUI | null = null;
+let overviewOn = false;
 
 function buildGame() {
   if (!S.info) return;
@@ -450,7 +473,7 @@ function focusTile(tileId: number) {
 
 function zoneOf(tileId: number): string {
   const t = S.info!.board.tiles[tileId]!;
-  return ZONES[t.zone - 1]!.name;
+  return ZONES[t.zone - 1]!.island;
 }
 
 function avg(xs: number[]) {
@@ -471,6 +494,7 @@ function updateGame() {
     h('span', { class: 'pill' }, `${ZONES[info.startZone - 1]!.name} → ${ZONES[info.endZone - 1]!.name}`),
     ...(st.countdownLeft !== null ? [h('span', { class: 'pill alert' }, `⏳ 마감까지 ${st.countdownLeft}라운드`)] : []),
     ...(st.finished ? [] : [h('span', { class: 'pill', style: { marginLeft: 'auto' } }, `${who(st.current)}의 차례`)]),
+    ...(G.mode === '3d' ? [h('button', { class: 'small', title: '모든 섬을 한눈에 보기', onclick: () => { overviewOn = !overviewOn; G?.v3?.setOverview(overviewOn); updateGame(); } }, overviewOn ? '🎥 따라가기' : '🗺️ 전체 보기')] : []),
     h('button', { class: 'small', title: '보드 보기 전환', onclick: () => setMode(G?.mode === '3d' ? '2d' : '3d') }, G.mode === '3d' ? '2D로 보기' : '3D로 보기'),
   );
 
@@ -496,10 +520,10 @@ function updateGame() {
     const a = avg(p.completion);
     const showTeam = info.teams;
     list.append(h('div', { class: `pl ${p.id === st.current && !st.finished ? 'cur' : ''} ${p.id === st.me ? 'me' : ''} ${p.connected ? '' : 'off'}` },
-      h('div', { class: 'tk' }, tokenEmoji(p.token)),
+      h('div', { class: 'tk' }, avatarEl(p.avatar, 40, SEAT_COLORS[p.id])),
       h('div', null,
         h('div', { class: 'nm' }, p.name, p.id === st.me ? ' (나)' : '', showTeam ? ` ${p.team === 0 ? '🔵' : '🔴'}` : '', !p.connected ? ' · 오프라인(봇이 대신)' : ''),
-        h('div', { class: 'meta' }, `${zoneOf(p.pos)} · 💪${p.stamina} ✨${p.cp}${p.arrived ? ` · 🏔️${p.arrivalRank}등 도착` : ''}`),
+        h('div', { class: 'meta' }, `${zoneOf(p.pos)} · 💪${p.stamina} ✨${p.cp}${p.arrived ? ` · 🏝️${p.arrivalRank}등 도착` : ''}`),
       ),
       h('div', { class: 'sc' }, p.exact ? pct(a) : `~${pct(a)}`),
     ));
@@ -588,12 +612,12 @@ function onEvent(e: GameEvent) {
     case 'card': {
       const verdict =
         e.choice === 'safe'
-          ? '안전하게 선택'
+          ? DECK_TEXT[e.deck].safe
           : e.success
             ? `도전 성공! (주사위 ${e.roll}${e.boost ? ` +✨${e.boost}` : ''}${e.rerolled ? ', 재굴림' : ''})`
             : `도전 실패… (주사위 ${e.roll}${e.boost ? ` +✨${e.boost}` : ''}${e.rerolled ? ', 재굴림' : ''})`;
       const eff = e.choice === 'safe' ? e.card.safe : e.success ? e.card.challenge.win : e.card.challenge.lose;
-      toast([h('h4', null, `${who(e.player)} · ${e.card.title}`), h('div', null, verdict), h('div', { class: 'fx' }, fmtEffect(eff))], e.choice === 'safe' ? '' : e.success ? 'good' : 'bad', 2600);
+      toast([h('h4', null, `${DECK_TEXT[e.deck].icon} ${who(e.player)} · ${e.card.title}`), h('div', null, verdict), h('div', { class: 'fx' }, fmtEffect(eff))], e.choice === 'safe' ? '' : e.success ? 'good' : 'bad', 2600);
       addLog(`${who(e.player)} 「${e.card.title}」 ${verdict}`, e.player === S.state.me);
       break;
     }
@@ -608,18 +632,18 @@ function onEvent(e: GameEvent) {
       addLog(`${who(e.player)} 보금자리 구입`);
       break;
     case 'sabotage':
-      toast([h('h4', null, e.free ? '🍃 정상의 바람' : '💢 방해!'), `${who(e.from)} → ${who(e.to)}`], 'bad', 2000);
+      toast([h('h4', null, e.free ? '🍃 등대의 바람' : '💢 방해!'), `${who(e.from)} → ${who(e.to)}`], 'bad', 2000);
       addLog(`${who(e.from)}${e.free ? '의 바람' : '의 방해'} → ${who(e.to)}`, e.to === S.state.me);
       break;
     case 'catchUp':
       addLog(`뒤처진 플레이어에게 ✨+1: ${e.players.map(who).join(', ')}`);
       break;
     case 'arrive':
-      toast([h('h4', null, `🏔️ ${who(e.player)} 정상 도착!`), `${e.rank}등`], 'good', 2400);
-      addLog(`${who(e.player)} 정상 도착 (${e.rank}등)`, true);
+      toast([h('h4', null, `🏝️ ${who(e.player)} 종착지 도착!`), `${e.rank}등`], 'good', 2400);
+      addLog(`${who(e.player)} 종착지 도착 (${e.rank}등)`, true);
       break;
     case 'countdown':
-      toast([h('h4', null, '⏳ 마감 카운트다운 시작'), `${e.rounds}라운드 안에 정상에 닿아야 해요`], 'bad', 2600);
+      toast([h('h4', null, '⏳ 마감 카운트다운 시작'), `${e.rounds}라운드 안에 종착지에 닿아야 해요`], 'bad', 2600);
       addLog(`마감 카운트다운: ${e.rounds}라운드`, true);
       break;
     case 'end':
@@ -629,6 +653,12 @@ function onEvent(e: GameEvent) {
 }
 
 // ───────── 결정 UI ─────────
+const DECK_TEXT = {
+  journey: { icon: '🃏', sub: '안전하게 갈까, 도전할까?', safe: '안전하게', challenge: '도전' },
+  activity: { icon: '🏄', sub: '액티비티! 참가하면 보상이 커요. 구경만 해도 조금 즐거워요.', safe: '구경만 한다', challenge: '참가한다' },
+  trouble: { icon: '⚠️', sub: '트러블 발생! 참고 넘기면 피해가 생기고, 맞서면 피할 수 있어요 (실패하면 더 아파요).', safe: '참고 넘긴다', challenge: '맞선다' },
+} as const;
+
 function answer(value: unknown) {
   if (!S.ask) return;
   net.send({ t: 'answer', id: S.ask.id, value });
@@ -652,10 +682,10 @@ function renderAsk() {
 
   switch (a.kind) {
     case 'die': {
-      box.append(h('h4', null, '🎲 어느 눈으로 이동할까?'), h('div', { class: 'sub' }, '고른 눈만큼 이동하고, 안 쓴 눈이 4 이상이면 ✨+1 (더블이면 ✨+1 더)'));
+      box.append(h('h4', null, '🎲 어느 눈으로 이동할까?'), h('div', { class: 'sub' }, `고른 눈 +${a.bonus}칸을 이동하고, 안 쓴 눈이 4 이상이면 ✨+1 (더블이면 ✨+1 더)`));
       const dbl = a.dice[0] === a.dice[1];
       for (const i of [0, 1] as const) {
-        const move = a.dice[i];
+        const move = a.dice[i] + a.bonus;
         const left = a.dice[1 - i]!;
         const cp = (left >= 4 ? 1 : 0) + (dbl ? 1 : 0);
         opts.append(opt(`${move}칸 이동`, cp ? `✨+${cp} 획득 (남는 눈 ${left})` : `✨ 없음 (남는 눈 ${left})`, () => answer(i), false, true));
@@ -666,16 +696,17 @@ function renderAsk() {
       box.append(h('h4', null, '🔀 갈림길'), h('div', { class: 'sub' }, `지름길은 안전 선택지 없이 도전만 가능해요. 현재 체력 💪${a.stamina}`));
       a.options.forEach((o, i) => {
         const short = o.route === 'short';
-        opts.append(opt(short ? '🧗 지름길' : '🥾 둘레길', `정상까지 ${o.distance}칸 · ${short ? '도전 카드만, 체력 소모' : '캠프·보금자리·날씨 칸 포함'}`, () => answer(i), false, !short));
+        opts.append(opt(short ? '🌴 지름길 (섬 가로지르기)' : '🏖️ 해안길', `종착지까지 ${o.distance}칸 · ${short ? '도전 카드만, 체력 소모' : '캠프·보금자리·날씨·액티비티 칸 포함'}`, () => answer(i), false, !short));
       });
       break;
     }
     case 'card': {
       const c = a.card;
       const ch = c.challenge;
-      box.append(h('h4', null, `🃏 ${c.title}`), h('div', { class: 'sub' }, a.canSafe ? '안전하게 갈까, 도전할까?' : '지름길이라 도전만 할 수 있어요'));
-      if (a.canSafe) opts.append(opt('안전하게', fmtEffect(c.safe), () => answer('safe'), false, true));
-      opts.append(opt(`도전 (성공 ${pct(successProb(ch.dc))})`, `💪-${ch.staminaCost} · 성공 ${fmtEffect(ch.win)} / 실패 ${fmtEffect(ch.lose)}`, () => answer('challenge'), a.canSafe && a.stamina < ch.staminaCost));
+      const L = DECK_TEXT[a.deck];
+      box.append(h('h4', null, `${L.icon} ${c.title}`), h('div', { class: 'sub' }, a.canSafe ? L.sub : `지름길이라 맞서야만 합니다. ${L.sub}`));
+      if (a.canSafe) opts.append(opt(L.safe, fmtEffect(c.safe), () => answer('safe'), false, a.deck !== 'trouble'));
+      opts.append(opt(`${L.challenge} (성공 ${pct(successProb(ch.dc))})`, `💪-${ch.staminaCost} · 성공 ${fmtEffect(ch.win)} / 실패 ${fmtEffect(ch.lose)}`, () => answer('challenge'), a.canSafe && a.stamina < ch.staminaCost, a.deck === 'trouble' || !a.canSafe));
       break;
     }
     case 'boost': {
@@ -699,7 +730,7 @@ function renderAsk() {
       opts.append(opt('구입한다', `💰-${a.cost} → ${fmtEffect(a.effect)}`, () => answer(true), a.asset < a.cost, true), opt('지나간다', '', () => answer(false)));
       break;
     case 'sabotage': {
-      box.append(h('h4', null, a.free ? '🍃 정상의 바람' : '💢 방해할까?'), h('div', { class: 'sub' }, a.free ? '정상에 먼저 닿은 특권! 아래의 누군가에게 바람을 불어 💪-1 (비용 없음)' : `✨${a.cost}개를 내고 같은 구간의 상대에게 💪-2 ❤️-1. 보유 ✨${a.cp}`));
+      box.append(h('h4', null, a.free ? '🍃 등대의 바람' : '💢 방해할까?'), h('div', { class: 'sub' }, a.free ? '종착지에 먼저 닿은 특권! 아직 여행 중인 누군가에게 바람을 불어 💪-1 (비용 없음)' : `✨${a.cost}개를 내고 같은 구간의 상대에게 💪-2 ❤️-1. 보유 ✨${a.cp}`));
       for (const id of a.targets) opts.append(opt(who(id), '', () => answer(id)));
       opts.append(opt('하지 않음', '', () => answer(null), false, true));
       break;
@@ -715,7 +746,7 @@ function viewResult(r: GameResult): HTMLElement {
   const goals = S.info?.goals ?? [];
   const nm = (id: number) => {
     const p = players[id];
-    return p ? `${tokenEmoji(p.token)} ${p.name}` : `P${id + 1}`;
+    return p ? p.name : `P${id + 1}`;
   };
   const winner = r.ranking[0]!;
   const rows = r.ranking.map((id, idx) => {
@@ -723,7 +754,7 @@ function viewResult(r: GameResult): HTMLElement {
     const p = players[id];
     return h('div', { class: `rank ${idx === 0 ? 'first' : ''}` },
       h('div', { style: { fontSize: '20px', fontWeight: 800 } }, idx === 0 ? '🏆' : `${idx + 1}`),
-      h('div', { style: { fontSize: '28px' } }, p ? tokenEmoji(p.token) : ''),
+      h('div', null, p ? avatarEl(p.avatar, 44, SEAT_COLORS[id]) : ''),
       h('div', null,
         h('div', null, p?.name ?? `P${id + 1}`, id === S.state?.me ? ' (나)' : '', info(r, id)),
         h('div', { class: 'muted', style: { fontSize: '12.5px' } },
@@ -737,8 +768,8 @@ function viewResult(r: GameResult): HTMLElement {
   });
   return h('div', { class: 'center result' },
     h('div', { class: 'hero' },
-      h('h1', null, `🏔️ ${nm(winner)} 우승!`),
-      h('p', null, r.endedBy === 'allArrived' ? '모두 정상에 도착했어요' : '마감 카운트다운이 끝났어요'),
+      h('h1', null, `🏝️ ${nm(winner)} 우승!`),
+      h('p', null, r.endedBy === 'allArrived' ? '모두 종착지에 도착했어요' : '마감 카운트다운이 끝났어요'),
       r.teamScores ? h('p', null, `팀 점수 — ${r.teamScores.map((t) => `${t.team === 0 ? '🔵' : '🔴'} ${t.score.toFixed(1)}`).join(' : ')} · ${r.winningTeam === 0 ? '🔵 파랑팀' : '🔴 빨강팀'} 승리`) : null,
     ),
     h('div', { class: 'card' }, ...rows),
@@ -751,7 +782,7 @@ function viewResult(r: GameResult): HTMLElement {
 function info(r: GameResult, id: number): HTMLElement | null {
   const p = S.state?.players[id];
   if (!p?.arrived) return h('span', { class: 'badge', style: { marginLeft: '6px' } }, '미도착');
-  return h('span', { class: 'badge', style: { marginLeft: '6px' } }, `🏔️ ${p.arrivalRank}등 도착`);
+  return h('span', { class: 'badge', style: { marginLeft: '6px' } }, `🏝️ ${p.arrivalRank}등 도착`);
 }
 
 // 시작

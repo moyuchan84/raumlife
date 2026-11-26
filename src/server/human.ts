@@ -23,7 +23,7 @@ export class HumanController implements Controller {
 
   async chooseDie(s: GameState, me: number, dice: [number, number]): Promise<0 | 1> {
     const r = await this.ask(
-      { kind: 'die', dice, cp: s.players[me]!.cp, maxCp: s.tuning.maxCp },
+      { kind: 'die', dice, bonus: s.tuning.moveBonus, cp: s.players[me]!.cp, maxCp: s.tuning.maxCp },
       (v) => (v === 0 || v === 1 ? v : FALLBACK),
     );
     return r === FALLBACK ? this.fallback.chooseDie(s, me, dice) : r;
@@ -45,7 +45,7 @@ export class HumanController implements Controller {
   async chooseCardOption(s: GameState, me: number, card: JourneyCard, canSafe: boolean): Promise<'safe' | 'challenge'> {
     const p = s.players[me]!;
     const r = await this.ask(
-      { kind: 'card', card, canSafe, stamina: p.stamina, cp: p.cp },
+      { kind: 'card', deck: s.board.tiles[p.pos]!.type as 'journey' | 'activity' | 'trouble', card, canSafe, stamina: p.stamina, cp: p.cp },
       (v) => (v === 'safe' || v === 'challenge' ? v : FALLBACK),
     );
     return r === FALLBACK ? this.fallback.chooseCardOption(s, me, card, canSafe) : r;

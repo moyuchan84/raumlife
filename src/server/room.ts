@@ -1,15 +1,17 @@
 import type { Controller, GameEvent, GameState } from '../engine';
 import { DEFAULT_TUNING, Game } from '../engine';
 import { createBot } from '../ai/bots';
-import type { Ask, LobbyState, RoomSettings, SeatView, ServerMsg, StartedInfo, TokenId } from '../shared/protocol';
-import { BOT_KINDS, TOKENS } from '../shared/protocol';
+import type { Ask, LobbyState, RoomSettings, SeatView, ServerMsg, StartedInfo } from '../shared/protocol';
+import { BOT_KINDS } from '../shared/protocol';
+import { BOT_NAMES, randomAvatar, sanitizeAvatar, type Avatar } from '../shared/avatar';
+import { Rng } from '../engine';
 import { FALLBACK, HumanController } from './human';
 import { goalViews, stateView } from './view';
 
 export interface Seat {
   kind: 'human' | 'bot';
   name: string;
-  token: TokenId;
+  avatar: Avatar;
   team: number;
   botKind?: string;
   session?: string;
@@ -66,15 +68,11 @@ export class Room {
   seatOf(session: string): number {
     return this.seats.findIndex((s) => s.session === session);
   }
-  private freeToken(): TokenId {
-    const used = new Set(this.seats.map((s) => s.token));
-    return TOKENS.find((t) => !used.has(t.id))!.id;
-  }
-
-  join(session: string, name: string): string | null {
+  join(session: string, name: string, avatar: Avatar): string | null {
     const existing = this.seatOf(session);
     if (existing >= 0) {
       this.seats[existing]!.connected = true;
+      this.seats[existing]!.avatar = avatar;
       delete this.seats[existing]!.disconnectedAt;
       this.seats[existing]!.name = name;
       this.broadcastLobby();
@@ -83,7 +81,7 @@ export class Room {
     }
     if (this.inGame) return '이미 게임이 진행 중입니다';
     if (this.seats.length >= MAX_SEATS) return '방이 가득 찼습니다 (최대 6명)';
-    this.seats.push({ kind: 'human', name, token: this.freeToken(), team: this.seats.length % 2, session, connected: true });
+    this.seats.push({ kind: 'human', name, avatar, team: this.seats.length % 2, session, connected: true });
     this.broadcastLobby();
     return null;
   }
@@ -148,14 +146,11 @@ export class Room {
     return null;
   }
 
-  setToken(session: string, token: TokenId): string | null {
+  setAvatar(session: string, avatar: unknown): void {
     const i = this.seatOf(session);
-    if (i < 0 || this.inGame) return null;
-    if (!TOKENS.some((t) => t.id === token)) return '알 수 없는 말입니다';
-    if (this.seats.some((s, j) => j !== i && s.token === token)) return '이미 다른 플레이어가 고른 말입니다';
-    this.seats[i]!.token = token;
+    if (i < 0 || this.inGame) return;
+    this.seats[i]!.avatar = sanitizeAvatar(avatar);
     this.broadcastLobby();
-    return null;
   }
 
   addBot(session: string, kind: string): string | null {
@@ -163,9 +158,10 @@ export class Room {
     if (this.seats.length >= MAX_SEATS) return '방이 가득 찼습니다';
     const bk = BOT_KINDS.find((b) => b.id === kind);
     if (!bk) return '알 수 없는 봇입니다';
-    const token = this.freeToken();
-    const label = TOKENS.find((t) => t.id === token)!.label;
-    this.seats.push({ kind: 'bot', name: `${label} (${bk.label} 봇)`, token, team: this.seats.length % 2, botKind: kind, connected: true });
+    const usedNames = new Set(this.seats.map((x) => x.name.split(' ')[0]));
+    const base = BOT_NAMES.find((n) => !usedNames.has(n)) ?? `봇${this.seats.length + 1}`;
+    const rng = new Rng(Math.floor(Math.random() * 2 ** 31));
+    this.seats.push({ kind: 'bot', name: `${base} (${bk.label} 봇)`, avatar: randomAvatar(() => rng.next()), team: this.seats.length % 2, botKind: kind, connected: true });
     this.broadcastLobby();
     return null;
   }
@@ -200,7 +196,7 @@ export class Room {
       seats: this.seats.map<SeatView>((s, i) => ({
         kind: s.kind,
         name: s.name,
-        token: s.token,
+        avatar: s.avatar,
         team: s.team,
         ...(s.botKind ? { botKind: s.botKind } : {}),
         connected: s.connected,
