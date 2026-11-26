@@ -1,0 +1,18 @@
+{
+  "name": "raumlife",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "인생 등산 (가칭) — 규칙 엔진, AI, 시뮬레이터",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "sim": "tsx src/sim/simulate.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.11",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.2"
+  }
+}

@@ -1,0 +1,166 @@
+export type StatKey = 'asset' | 'happy' | 'network' | 'growth';
+export const STAT_KEYS: readonly StatKey[] = ['asset', 'happy', 'network', 'growth'];
+export const STAT_LABEL: Record<StatKey, string> = {
+  asset: '💰자산',
+  happy: '❤️행복',
+  network: '🤝인맥',
+  growth: '🌱성장',
+};
+
+/** 효과: 스탯 증감 + 체력(stamina) + 기회 포인트(cp) */
+export type Effect = Partial<Record<StatKey, number>> & { stamina?: number; cp?: number };
+
+export type TileType = 'journey' | 'camp' | 'path' | 'lodge' | 'fork' | 'weather' | 'milestone' | 'summit';
+
+export interface Tile {
+  id: number;
+  zone: number; // 1..10
+  type: TileType;
+  next: number[]; // 여러 개면 갈림길
+  /** 지름길 위의 칸: 안전 선택지 없이 도전만 가능 */
+  risky?: boolean;
+  /** 지름길 / 둘레길 표시 (UI/통계용) */
+  route?: 'short' | 'long';
+}
+
+export interface Board {
+  tiles: Tile[];
+  start: number;
+  summit: number;
+}
+
+export interface Challenge {
+  staminaCost: number;
+  dc: number; // d6 >= dc 이면 성공
+  win: Effect;
+  lose: Effect;
+}
+export interface JourneyCard {
+  id: string;
+  /** 0 이면 모든 구간 공통 */
+  zone: number;
+  title: string;
+  safe: Effect;
+  challenge: Challenge;
+}
+export interface WeatherCard {
+  id: string;
+  title: string;
+  effect: Effect; // 모든 플레이어에게 적용
+}
+
+export type Difficulty = 'easy' | 'normal' | 'hard' | 'extreme';
+
+export type ConditionKind =
+  | 'noShortcut'
+  | 'noExhaust'
+  | 'fewSabotaged'
+  | 'togetherSummit'
+  | 'challengesWon'
+  | 'pathsTaken';
+
+export type Goal =
+  | { kind: 'stat'; stat: StatKey; target: number }
+  | { kind: 'condition'; cond: ConditionKind; n?: number };
+
+export interface GameConfig {
+  players: number; // 1..6 (AI 포함 모두 "플레이어")
+  startZone: number; // 1..10
+  endZone: number; // startZone..10 (최소 2구간 권장)
+  difficulty: Difficulty;
+  seed: number;
+  /** 팀전: 길이=players, 같은 값이면 같은 팀. 없으면 개인전 */
+  teams?: number[];
+  /** 튜닝 파라미터 일부 덮어쓰기 */
+  tuning?: Partial<Tuning>;
+}
+
+export interface Tuning {
+  /** 목표치 = 시작 스탯 + 구간 수 × perZoneGain × 난이도 계수 */
+  perZoneGain: number;
+  difficultyCoef: Record<Difficulty, number>;
+  startStamina: number;
+  maxStamina: number;
+  maxCp: number;
+  catchUpCp: number;
+  /** 첫 도착 후 마감까지 최소 라운드 */
+  countdownRounds: number;
+  /** 구간 수에 비례한 마감 라운드: max(countdownRounds, ceil(구간수 × 이 값)) */
+  countdownPerZone: number;
+  arrivalBonus: number[]; // 1등, 2등, 3등...
+  notArrivedPenalty: number;
+  sabotageCost: number;
+  rerollCost: number;
+  /** 마일스톤 보너스 조건: 스탯 합계 >= 구간수(누적) × 이 값 */
+  milestoneThresholdPerZone: number;
+  /** 한 판 시간 추정용 (초/턴) */
+  secondsPerTurn: number;
+}
+
+export interface PlayerState {
+  id: number;
+  name: string;
+  team: number;
+  pos: number; // tile id
+  stats: Record<StatKey, number>;
+  stamina: number;
+  cp: number;
+  arrived: boolean;
+  arrivalRank: number; // 0 = 미도착
+  arrivalRound: number;
+  /** 통계/조건 추적 */
+  track: {
+    shortcuts: number;
+    exhausts: number;
+    sabotaged: number;
+    challengesWon: number;
+    challengesTried: number;
+    pathsTaken: number;
+    togetherSummit: boolean;
+    turns: number;
+  };
+  /** 방해 면역 남은 라운드 (쿨다운) */
+  sabotageImmuneUntilRound: number;
+  /** 같은 라운드 방해 사용 여부 */
+  lastSabotageRound: number;
+}
+
+export interface GameState {
+  config: GameConfig;
+  tuning: Tuning;
+  board: Board;
+  players: PlayerState[];
+  goals: Goal[];
+  round: number; // 1부터
+  current: number; // 이번 라운드의 현재 플레이어 인덱스
+  arrivalCount: number;
+  countdownLeft: number | null; // 첫 도착 후 남은 라운드
+  finished: boolean;
+  /** 진로 칸 자리: key = `${zone}:${optionIndex}` → 사용 인원 */
+  pathSlots: Record<string, number>;
+  log: string[];
+}
+
+export interface ScoreBreakdown {
+  playerId: number;
+  completion: number[]; // 목표별 달성률 0..1
+  base: number; // 0..100
+  arrivalBonus: number;
+  penalty: number;
+  total: number;
+  overflow: number; // 동점 처리용 초과 달성 총량
+}
+
+export interface GameResult {
+  scores: ScoreBreakdown[];
+  ranking: number[]; // playerId 순위 (1등부터)
+  winner: number;
+  rounds: number;
+  endedBy: 'allArrived' | 'countdown';
+  teamScores?: { team: number; score: number }[];
+  winningTeam?: number;
+  /** 시뮬레이터용 집계 */
+  metrics: Record<string, number>;
+  /** 플레이어 총 턴 수 (소요 시간 추정용) */
+  playerTurns: number;
+}
