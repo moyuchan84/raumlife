@@ -83,6 +83,7 @@ function answerFor(ask: Extract<ServerMsg, { t: 'ask' }>['ask']): unknown {
     case 'boost': return 0;
     case 'reroll': return false;
     case 'pathOption': return ask.available.findIndex(Boolean);
+    case 'milestone': return ask.options.findIndex((o) => o.enabled);
     case 'lodge': return false;
     case 'sabotage': return null;
   }

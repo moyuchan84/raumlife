@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ACCESSORIES, BOTTOM_COLORS, HAIR_COLORS, OUTFIT_COLORS, SKIN_TONES, type Avatar } from '../shared/avatar';
+import { ACCESSORIES, BOTTOM_COLORS, HAIR_COLORS, OUTFIT_COLORS, SKIN_TONES, ageLook, grayHair, type AgeLook, type Avatar } from '../shared/avatar';
 
 /** 3단계 명암의 만화풍(toon) 그라디언트 */
 let gradient: THREE.DataTexture | null = null;
@@ -52,6 +52,7 @@ function at<T extends THREE.Object3D>(o: T, x: number, y: number, z: number): T 
 const surfZ = (x: number, y: number, r = 1) => Math.sqrt(Math.max(0.0001, r * r - x * x - y * y));
 
 export interface Char3D {
+  look: AgeLook;
   group: THREE.Group;
   head: THREE.Group;
   body: THREE.Group;
@@ -61,10 +62,11 @@ export interface Char3D {
   legR: THREE.Group;
 }
 
-function buildFace(a: Avatar, head: THREE.Group) {
+function buildFace(a: Avatar, head: THREE.Group, look: AgeLook) {
   const ey = 0.08;
   const ex = 0.36;
-  const eye = (x: number, r = 0.12) => {
+  const eye = (x: number, r0 = 0.12) => {
+    const r = r0 * look.eye;
     const g = new THREE.Group();
     g.add(mesh(G.low, BLACK, r * 0.9, r * 1.3, r * 0.5));
     g.add(at(mesh(G.low, WHITE, r * 0.32), -r * 0.25, r * 0.4, r * 0.35));
@@ -109,8 +111,9 @@ function buildFace(a: Avatar, head: THREE.Group) {
   }
 }
 
-function buildHair(a: Avatar, head: THREE.Group) {
-  const m = toon(HAIR_COLORS[a.hairColor]!);
+function buildHair(a: Avatar, head: THREE.Group, look: AgeLook) {
+  const hairHex = grayHair(HAIR_COLORS[a.hairColor]!, look.gray);
+  const m = toon(hairHex);
   const cap = (r: number, theta: number, rotX = -0.3) => {
     const geo = new THREE.SphereGeometry(r, 24, 14, 0, Math.PI * 2, 0, theta);
     const mm = new THREE.Mesh(geo, m);
@@ -123,7 +126,7 @@ function buildHair(a: Avatar, head: THREE.Group) {
   switch (a.hairStyle) {
     case 1: { // 단발
       cap(1.07, Math.PI * 0.5);
-      const back = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.05, 1.15, 22, 1, true, Math.PI * 0.55, Math.PI * 0.9), new THREE.MeshToonMaterial({ color: HAIR_COLORS[a.hairColor]!, gradientMap: toonGradient(), side: THREE.DoubleSide }));
+      const back = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.05, 1.15, 22, 1, true, Math.PI * 0.55, Math.PI * 0.9), new THREE.MeshToonMaterial({ color: hairHex, gradientMap: toonGradient(), side: THREE.DoubleSide }));
       back.position.set(0, -0.3, 0);
       head.add(back);
       break;
@@ -200,8 +203,43 @@ function buildAccessory(a: Avatar, head: THREE.Group, body: THREE.Group) {
   }
 }
 
+/** 이마·입가 주름과 하얀 눈썹 */
+function buildWrinkles(head: THREE.Group, look: AgeLook) {
+  if (!look.wrinkles) return;
+  const line = new THREE.MeshBasicMaterial({ color: 0x5a3c28, transparent: true, opacity: 0.55 });
+  const arcLine = (x: number, y: number, r: number, rotZ: number) => {
+    const t = new THREE.Mesh(new THREE.TorusGeometry(1, 0.05, 4, 12, Math.PI * 0.55), line);
+    t.scale.set(r, r * 0.45, 0.5);
+    t.rotation.z = rotZ;
+    t.position.set(x, y, surfZ(x, y) + 0.012);
+    head.add(t);
+  };
+  for (let i = 0; i < look.wrinkles + 1; i++) arcLine(0, 0.5 + i * 0.1, 0.34 - i * 0.04, Math.PI * 0.225);
+  if (look.wrinkles > 1) for (const sx of [-1, 1]) arcLine(sx * 0.3, -0.2, 0.2, sx > 0 ? -Math.PI * 0.35 : Math.PI * 0.85);
+  const brow = toon(grayHair('#6a4a30', look.gray));
+  for (const sx of [-1, 1]) {
+    const b = mesh(G.box, brow, 0.22, 0.045, 0.05);
+    b.position.set(sx * 0.36, 0.3, surfZ(sx * 0.36, 0.3) + 0.012);
+    b.rotation.z = sx * -0.15;
+    head.add(b);
+  }
+}
+
+/** 노년의 지팡이 */
+function buildCane(group: THREE.Group) {
+  const wood = toon('#8a5a2b');
+  const cane = new THREE.Group();
+  cane.add(at(mesh(G.cyl, wood, 0.06, 1.7, 0.06), 0, 0.85, 0));
+  const hook = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.06, 6, 12, Math.PI), wood);
+  hook.position.set(0.2, 1.7, 0);
+  cane.add(hook);
+  cane.position.set(0.95, 0, 0.3);
+  group.add(cane);
+}
+
 /** 사람 캐릭터(머리가 큰 치비 스타일)를 도형으로 조립한다. 발바닥이 y=0, 키는 약 3.6 */
-export function createCharacter(a: Avatar): Char3D {
+export function createCharacter(a: Avatar, stage = 5): Char3D {
+  const look = ageLook(stage);
   const group = new THREE.Group();
   const skin = SKIN_TONES[a.skin]!;
   const topCol = OUTFIT_COLORS[a.topColor]!;
@@ -264,17 +302,22 @@ export function createCharacter(a: Avatar): Char3D {
 
   // ── 머리
   const head = new THREE.Group();
-  head.position.y = 2.55;
+  head.position.y = 2.55 - look.hunch * 0.9;
+  head.position.z = look.hunch * 1.3;
+  head.scale.setScalar(look.head);
   const skull = mesh(G.sphere, toon(skin), 1);
   const skullLine = mesh(G.sphere, OUTLINE, 1.04);
   head.add(skull, skullLine);
   for (const sx of [-1, 1]) head.add(at(mesh(G.sphere, toon(skin), 0.17), sx * 0.98, 0.0, 0.05));
-  buildFace(a, head);
-  buildHair(a, head);
+  buildFace(a, head, look);
+  buildWrinkles(head, look);
+  buildHair(a, head, look);
   buildAccessory(a, head, body);
   group.add(head);
+  if (look.cane) buildCane(group);
+  body.rotation.x = look.hunch;
 
-  return { group, head, body, armL, armR, legL, legR };
+  return { look, group, head, body, armL, armR, legL, legR };
 }
 
 export type CharMode = 'idle' | 'walk' | 'cheer';
@@ -287,6 +330,7 @@ export function animateCharacter(c: Char3D, t: number, mode: CharMode) {
   c.legL.rotation.x = -sw * 0.8;
   c.legR.rotation.x = sw * 0.8;
   c.body.scale.y = 1 + Math.sin(t * 2.2) * 0.02;
+  c.body.rotation.x = c.look.hunch + (mode === 'walk' ? 0.04 : 0);
   c.head.rotation.z = Math.sin(t * 1.4) * 0.05;
   c.head.rotation.x = mode === 'walk' ? 0.08 : 0;
 }

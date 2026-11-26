@@ -1,5 +1,5 @@
 import type { GameState } from '../engine';
-import { goalCompletion, goalLabel } from '../engine';
+import { goalCompletion, goalLabel, staminaCapFor } from '../engine';
 import type { GoalView, PlayerView, StateView } from '../shared/protocol';
 import type { Seat } from './room';
 
@@ -31,7 +31,9 @@ export function stateView(s: GameState, seats: Seat[], viewer: number): StateVie
       connected: seat.kind === 'bot' || seat.connected,
       pos: p.pos,
       stamina: p.stamina,
+      staminaCap: Math.min(s.tuning.maxStamina, staminaCapFor(s.tuning.staminaCap, s.board.tiles[p.pos]!.zone)),
       cp: p.cp,
+      life: { ...p.life },
       arrived: p.arrived,
       arrivalRank: p.arrivalRank,
       stats: exact ? { ...p.stats } : null,

@@ -116,6 +116,7 @@ async function main() {
   const metricSum: Record<string, number> = {};
   const rankOfFinish: number[] = [];
   const byGoal = new Map<string, number[]>();
+  const lifeStat = { partner: 0, home: 0, child: 0, career: 0, grand: 0, n: 0 };
 
   for (const { res, game } of results) {
     const w = res.winner;
@@ -133,6 +134,12 @@ async function main() {
       const p = game.state.players[sc.playerId]!;
       if (p.arrived) arrBy.set(b, (arrBy.get(b) ?? 0) + 1);
       for (const k of ['asset', 'happy', 'network', 'growth'] as const) stats[k].push(p.stats[k]);
+      lifeStat.n++;
+      if (p.life.partner) lifeStat.partner++;
+      if (p.life.home) lifeStat.home++;
+      if (p.life.children > 0) lifeStat.child++;
+      if (p.life.career) lifeStat.career++;
+      if (p.life.grandchildren > 0) lifeStat.grand++;
       compl.push(sc.completion);
       rankOfFinish.push(sc.base);
     }
@@ -163,6 +170,8 @@ async function main() {
   line(`  전체 평균 달성률 ${f1(mean(bases))}  ·  승자 평균 ${f1(mean(winnerBases))}  ·  100% 달성 비율 ${pct(full.filter(Boolean).length / full.length)}`);
   line(`  1·2위 동점 ${pct(ties / N)}`);
   line(`  평균 최종 스탯: 자산 ${f1(mean(stats.asset))} · 행복 ${f1(mean(stats.happy))} · 인맥 ${f1(mean(stats.network))} · 성장 ${f1(mean(stats.growth))}`);
+  line();
+  line(`■ 인생 상태 (최종, 시작 상태 포함)  동반자 ${pct(lifeStat.partner / lifeStat.n)} · 내 집 ${pct(lifeStat.home / lifeStat.n)} · 자녀 ${pct(lifeStat.child / lifeStat.n)} · 직업 ${pct(lifeStat.career / lifeStat.n)} · 손주 ${pct(lifeStat.grand / lifeStat.n)}`);
   line();
   line('■ 목표 종류별 평균 달성률 (균형 점검용)');
   for (const [k, v] of [...byGoal.entries()].sort()) line(`  ${k.padEnd(24)} ${pct(mean(v))}   (등장 ${v.length / P}회)`);

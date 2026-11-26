@@ -60,3 +60,55 @@ export function sameAvatar(a: Avatar, b: Avatar): boolean {
 }
 
 export const BOT_NAMES = ['하나', '민준', '서연', '도윤', '지우', '예준', '수아', '시우', '아라', '건우'] as const;
+
+// ───────── 나이에 따른 모습 ─────────
+/** 구간(1~10) 번호가 곧 나이 단계다: 1 아기 … 6 성인 … 10 아주 연로한 노년 */
+export interface AgeLook {
+  stage: number;
+  label: string;
+  /** 전체 키/몸 크기 */
+  scale: number;
+  /** 머리 크기 배율 (어릴수록 머리가 크다) */
+  head: number;
+  /** 흰머리 정도 0..1 */
+  gray: number;
+  /** 주름 0(없음) 1(약간) 2(뚜렷) */
+  wrinkles: 0 | 1 | 2;
+  /** 구부정한 정도 (라디안) */
+  hunch: number;
+  cane: boolean;
+  /** 눈이 얼마나 크게 보이는지 (아기일수록 큼) */
+  eye: number;
+}
+
+const AGE_TABLE: AgeLook[] = [
+  { stage: 1, label: '아기', scale: 0.62, head: 1.2, gray: 0, wrinkles: 0, hunch: 0, cane: false, eye: 1.3 },
+  { stage: 2, label: '어린이', scale: 0.76, head: 1.1, gray: 0, wrinkles: 0, hunch: 0, cane: false, eye: 1.18 },
+  { stage: 3, label: '중학생', scale: 0.9, head: 1.03, gray: 0, wrinkles: 0, hunch: 0, cane: false, eye: 1.08 },
+  { stage: 4, label: '고등학생', scale: 0.98, head: 1.0, gray: 0, wrinkles: 0, hunch: 0, cane: false, eye: 1.04 },
+  { stage: 5, label: '청년', scale: 1.0, head: 0.97, gray: 0, wrinkles: 0, hunch: 0, cane: false, eye: 1 },
+  { stage: 6, label: '성인', scale: 1.0, head: 0.96, gray: 0.05, wrinkles: 0, hunch: 0, cane: false, eye: 0.96 },
+  { stage: 7, label: '중년', scale: 1.0, head: 0.96, gray: 0.4, wrinkles: 1, hunch: 0.03, cane: false, eye: 0.94 },
+  { stage: 8, label: '노년 초반', scale: 0.97, head: 0.97, gray: 0.8, wrinkles: 1, hunch: 0.1, cane: false, eye: 0.92 },
+  { stage: 9, label: '노년 중반', scale: 0.93, head: 0.98, gray: 1, wrinkles: 2, hunch: 0.18, cane: true, eye: 0.9 },
+  { stage: 10, label: '노년 말기', scale: 0.9, head: 0.99, gray: 1, wrinkles: 2, hunch: 0.26, cane: true, eye: 0.88 },
+];
+
+export function ageLook(stage: number): AgeLook {
+  return AGE_TABLE[Math.max(1, Math.min(10, Math.round(stage))) - 1]!;
+}
+
+/** 머리색을 흰머리 쪽으로 섞는다 (t: 0..1) */
+export function grayHair(hex: string, t: number): string {
+  if (t <= 0) return hex;
+  const n = parseInt(hex.slice(1), 16);
+  const target = [214, 217, 224];
+  const mix = (c: number, i: number) => Math.round(c + (target[i]! - c) * Math.min(1, t));
+  const r = mix((n >> 16) & 255, 0);
+  const g = mix((n >> 8) & 255, 1);
+  const b = mix(n & 255, 2);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+}
+
+/** 캐릭터 만들기 화면의 "나이 미리보기" 단계 */
+export const AGE_PREVIEW_STAGES = [1, 2, 4, 5, 7, 9] as const;

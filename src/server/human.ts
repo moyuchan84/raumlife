@@ -1,4 +1,4 @@
-import type { Controller, GameState, JourneyCard } from '../engine';
+import type { Controller, GameState, JourneyCard, MilestoneChoice } from '../engine';
 import { LODGE_COST, LODGE_EFFECT, PATH_ARCHETYPES, ZONES, distancesToSummit } from '../engine';
 import type { Ask } from '../shared/protocol';
 import type { Room } from './room';
@@ -74,6 +74,14 @@ export class HumanController implements Controller {
       (v) => (typeof v === 'number' && Number.isInteger(v) && v >= -1 && v <= 2 && (v === -1 || available[v]) ? v : FALLBACK),
     );
     return r === FALLBACK ? this.fallback.choosePathOption(s, me, zone, available) : r;
+  }
+
+  async chooseMilestone(s: GameState, me: number, zone: number, title: string, options: MilestoneChoice[]): Promise<number> {
+    const p = s.players[me]!;
+    const r = await this.ask({ kind: 'milestone', zone, title, options, life: { ...p.life }, asset: p.stats.asset }, (v) =>
+      typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < options.length && options[v]!.enabled ? v : FALLBACK,
+    );
+    return r === FALLBACK ? this.fallback.chooseMilestone(s, me, zone, title, options) : r;
   }
 
   async chooseLodge(s: GameState, me: number): Promise<boolean> {

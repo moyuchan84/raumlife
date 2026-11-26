@@ -6,6 +6,8 @@ import {
   HAIR_STYLES,
   OUTFIT_COLORS,
   SKIN_TONES,
+  AGE_PREVIEW_STAGES,
+  ageLook,
   TOPS,
   randomAvatar,
   type Avatar,
@@ -19,6 +21,7 @@ import { h } from './dom';
  */
 export function createCreator(initial: Avatar, onChange: (a: Avatar) => void): HTMLElement {
   let a: Avatar = { ...initial };
+  let stage = 5; // 나이 미리보기
   const root = h('div', { class: 'creator' });
 
   const set = (patch: Partial<Avatar>) => {
@@ -42,7 +45,10 @@ export function createCreator(initial: Avatar, onChange: (a: Avatar) => void): H
   function draw() {
     root.replaceChildren(
       h('div', { class: 'cpreview' },
-        h('img', { src: avatarImage(a, 180), width: 180, height: 180, alt: '내 캐릭터' }),
+        h('img', { src: avatarImage(a, 180, stage), width: 180, height: 180, alt: '내 캐릭터' }),
+        h('div', { class: 'chips', style: { justifyContent: 'center' } }, AGE_PREVIEW_STAGES.map((st) =>
+          h('button', { class: `chip small ${stage === st ? 'on' : ''}`, title: '나이가 들면 이렇게 변해요', onclick: () => { stage = st; draw(); } }, ageLook(st).label))),
+        h('div', { class: 'muted', style: { fontSize: '12px', textAlign: 'center' } }, '나이가 들면 모습이 바뀌어요'),
         h('button', { onclick: () => set(randomAvatar(Math.random)) }, '🎲 랜덤')),
       h('div', { class: 'cparts' },
         swatches('피부', SKIN_TONES, 'skin'),

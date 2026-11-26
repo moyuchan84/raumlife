@@ -7,8 +7,40 @@ export const STAT_LABEL: Record<StatKey, string> = {
   growth: '🌱성장',
 };
 
-/** 효과: 스탯 증감 + 체력(stamina) + 기회 포인트(cp) */
-export type Effect = Partial<Record<StatKey, number>> & { stamina?: number; cp?: number };
+/** 인생 상태: 직업·동반자·자녀·집. 카드 조건과 인생 목표에 쓰인다. */
+export interface LifeState {
+  career: string | null;
+  partner: boolean;
+  children: number;
+  grandchildren: number;
+  home: boolean;
+}
+/** 효과로 인한 인생 상태 변화 */
+export interface LifeChange {
+  career?: string;
+  partner?: boolean;
+  children?: number; // 증가량
+  grandchildren?: number; // 증가량
+  home?: boolean;
+}
+/** 카드·선택지의 조건 */
+export interface Req {
+  partner?: boolean;
+  noPartner?: boolean;
+  children?: number; // 최소 자녀 수
+  childrenLt?: number; // 자녀 수가 이 값 미만
+  grandchildren?: number;
+  grandchildrenLt?: number;
+  home?: boolean;
+  noHome?: boolean;
+  career?: boolean;
+  noCareer?: boolean;
+  family?: boolean; // 동반자 또는 자녀가 있다
+  minAsset?: number;
+}
+
+/** 효과: 스탯 증감 + 체력(stamina) + 기회 포인트(cp) + 인생 상태 변화 */
+export type Effect = Partial<Record<StatKey, number>> & { stamina?: number; cp?: number; life?: LifeChange };
 
 export type TileType =
   | 'journey'
@@ -54,6 +86,8 @@ export interface JourneyCard {
   title: string;
   safe: Effect;
   challenge: Challenge;
+  /** 이 조건을 만족하는 플레이어에게만 나오는 카드 */
+  requires?: Req;
 }
 export interface WeatherCard {
   id: string;
@@ -68,6 +102,11 @@ export type ConditionKind =
   | 'noExhaust'
   | 'fewSabotaged'
   | 'togetherSummit'
+  | 'hasPartner'
+  | 'hasHome'
+  | 'hasChild'
+  | 'hasCareer'
+  | 'grandchild'
   | 'challengesWon'
   | 'pathsTaken';
 
@@ -105,6 +144,8 @@ export interface Tuning {
   rerollCost: number;
   /** 마일스톤 보너스 조건: 스탯 합계 >= 구간수(누적) × 이 값 */
   milestoneThresholdPerZone: number;
+  /** 나이(구간)에 따른 체력 상한 (구간 1~10) */
+  staminaCap: number[];
   /** 한 판 시간 추정용 (초/턴) */
   secondsPerTurn: number;
   /** 고른 주사위 눈에 더해지는 이동 칸 수 (칸이 늘어난 만큼 보정) */
@@ -119,6 +160,7 @@ export interface PlayerState {
   stats: Record<StatKey, number>;
   stamina: number;
   cp: number;
+  life: LifeState;
   arrived: boolean;
   arrivalRank: number; // 0 = 미도착
   arrivalRound: number;
@@ -187,6 +229,8 @@ export type GameEvent =
   | { t: 'dice'; player: number; dice: [number, number] }
   | { t: 'diceChosen'; player: number; pick: 0 | 1; move: number; cpGain: number }
   | { t: 'move'; player: number; path: number[] }
+  | { t: 'zoneEnter'; player: number; zone: number }
+  | { t: 'milestone'; player: number; zone: number; option: string; success: boolean | null; effect: Effect }
   | { t: 'tile'; player: number; tile: number; tileType: TileType; delta: Effect }
   | { t: 'card'; player: number; deck: CardDeck; card: JourneyCard; choice: 'safe' | 'challenge'; boost: number; roll: number | null; success: boolean | null; rerolled: boolean }
   | { t: 'weather'; player: number; card: WeatherCard }

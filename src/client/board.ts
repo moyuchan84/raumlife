@@ -220,7 +220,7 @@ export function draw(ctx: CanvasRenderingContext2D, o: DrawOptions) {
     ctx.arc(x, y - 2, sz / 2 + 2, 0, Math.PI * 2);
     ctx.fillStyle = col;
     ctx.fill();
-    const img = avatarImageEl(p.avatar, 64);
+    const img = avatarImageEl(p.avatar, 64, tiles[p.pos]!.zone);
     if (img.complete && img.naturalWidth) {
       ctx.save();
       ctx.beginPath();

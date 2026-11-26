@@ -1,4 +1,16 @@
-import type { GameState, JourneyCard } from './types';
+import type { Effect, GameState, JourneyCard } from './types';
+
+/** 이정표 선택지 (조건을 못 맞추면 enabled=false) */
+export interface MilestoneChoice {
+  id: string;
+  name: string;
+  desc: string;
+  effect: Effect;
+  dc?: number;
+  fail?: Effect;
+  enabled: boolean;
+  why: string;
+}
 
 /**
  * 플레이어(사람/AI)가 내리는 결정들. 엔진은 결정이 필요할 때마다 호출한다.
@@ -20,6 +32,8 @@ export interface Controller {
   wantReroll(s: GameState, me: number, card: JourneyCard, roll: number): Maybe<boolean>;
   /** 진로 칸: 선택지 인덱스 (자리가 없으면 available[i]=false). -1 이면 선택 안 함 */
   choosePathOption(s: GameState, me: number, zone: number, available: boolean[]): Maybe<number>;
+  /** 구간 끝 이정표: 인생의 갈림길 선택 (enabled 인 것만 고를 수 있다) */
+  chooseMilestone(s: GameState, me: number, zone: number, title: string, options: MilestoneChoice[]): Maybe<number>;
   /** 보금자리를 살지 */
   chooseLodge(s: GameState, me: number): Maybe<boolean>;
   /**

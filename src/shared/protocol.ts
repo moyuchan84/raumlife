@@ -1,4 +1,4 @@
-import type { CardDeck, Difficulty, Effect, GameEvent, GameResult, JourneyCard, StatKey, Tile } from '../engine';
+import type { CardDeck, Difficulty, Effect, GameEvent, GameResult, JourneyCard, LifeState, MilestoneChoice, StatKey, Tile } from '../engine';
 import type { Avatar } from './avatar';
 
 export const BOT_KINDS = [
@@ -45,7 +45,10 @@ export interface PlayerView {
   connected: boolean;
   pos: number;
   stamina: number;
+  /** 지금 구간(나이)에서의 체력 상한 */
+  staminaCap: number;
   cp: number;
+  life: LifeState;
   arrived: boolean;
   arrivalRank: number;
   /** 내 것/팀원/종료 후에만 정확한 값 */
@@ -91,6 +94,7 @@ export type Ask =
   | { kind: 'boost'; card: JourneyCard; cp: number }
   | { kind: 'reroll'; card: JourneyCard; roll: number; cost: number }
   | { kind: 'pathOption'; zone: number; names: string[]; effects: Effect[]; available: boolean[] }
+  | { kind: 'milestone'; zone: number; title: string; options: MilestoneChoice[]; life: LifeState; asset: number }
   | { kind: 'lodge'; cost: number; effect: Effect; asset: number }
   | { kind: 'sabotage'; targets: number[]; free: boolean; cost: number; cp: number };
 

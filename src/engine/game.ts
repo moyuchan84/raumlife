@@ -20,12 +20,14 @@ import { buildBoard } from './board';
 import { DECKS } from './data/cards';
 import { WEATHER } from './data/weather';
 import { PATH_ARCHETYPES } from './data/zones';
+import { MILESTONES, meets, reqText, staminaCapFor, startLife } from './data/life';
+import type { MilestoneChoice } from './controller';
 import { DEFAULT_TUNING } from './tuning';
 import { START_STATS, generateGoals, goalCompletion, goalOverflow } from './goals';
 
 export const LODGE_COST = 2;
 export const LODGE_EFFECT: Effect = { happy: 3, stamina: 1 };
-export const SABOTAGE_EFFECT: Effect = { stamina: -2, happy: -1 };
+export const SABOTAGE_EFFECT: Effect = { stamina: -1, happy: -1 };
 export const WIND_EFFECT: Effect = { stamina: -1 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -63,8 +65,9 @@ export class Game {
       team: config.teams ? config.teams[i]! : i,
       pos: board.start,
       stats: { ...START_STATS },
-      stamina: tuning.startStamina,
+      stamina: Math.min(tuning.startStamina, staminaCapFor(tuning.staminaCap, config.startZone)),
       cp: 0,
+      life: startLife(config.startZone),
       arrived: false,
       arrivalRank: 0,
       arrivalRound: 0,
@@ -108,14 +111,29 @@ export class Game {
     if (this.options.verbose) this.state.log.push(`[R${this.state.round}] ${msg}`);
   }
 
+  /** 지금 있는 구간(나이)에서의 체력 상한 */
+  staminaCap(p: PlayerState): number {
+    const t = this.state.tuning;
+    const zone = this.state.board.tiles[p.pos]!.zone;
+    return Math.min(t.maxStamina, staminaCapFor(t.staminaCap, zone));
+  }
+
   applyEffect(p: PlayerState, e: Effect): void {
     const t = this.state.tuning;
     for (const k of STAT_KEYS) {
       const d = e[k];
       if (d) p.stats[k] = Math.max(0, p.stats[k] + d);
     }
-    if (e.stamina) p.stamina = clamp(p.stamina + e.stamina, 0, t.maxStamina);
+    if (e.stamina) p.stamina = clamp(p.stamina + e.stamina, 0, this.staminaCap(p));
     if (e.cp) p.cp = clamp(p.cp + e.cp, 0, t.maxCp);
+    const l = e.life;
+    if (l) {
+      if (l.career) p.life.career = l.career;
+      if (l.partner) p.life.partner = true;
+      if (l.children) p.life.children = Math.min(3, p.life.children + l.children);
+      if (l.grandchildren) p.life.grandchildren = Math.min(3, p.life.grandchildren + l.grandchildren);
+      if (l.home) p.life.home = true;
+    }
   }
 
   /** 현재 점수 (목표 달성률 평균 × 100, 보너스 제외) */
@@ -124,7 +142,7 @@ export class Game {
     return (g.reduce((a, goal) => a + goalCompletion(p, goal), 0) / g.length) * 100;
   }
 
-  private drawCard(deck: CardDeck, zone: number): JourneyCard {
+  private drawCard(deck: CardDeck, zone: number, p: PlayerState): JourneyCard {
     const key = `${deck}:${zone}`;
     let cards = this.journeyDecks.get(key) ?? [];
     if (cards.length === 0) {
@@ -134,7 +152,15 @@ export class Game {
       this.journeyDiscard.set(key, []);
       this.journeyDecks.set(key, cards);
     }
-    const card = cards.pop()!;
+    // 이 플레이어의 인생 상태에 맞는 카드를 찾는다 (없으면 조건을 무시)
+    let idx = -1;
+    for (let i = cards.length - 1; i >= 0; i--) {
+      if (meets(cards[i]!.requires, p.life, p.stats.asset)) {
+        idx = i;
+        break;
+      }
+    }
+    const card = idx >= 0 ? cards.splice(idx, 1)[0]! : cards.pop()!;
     const d = this.journeyDiscard.get(key) ?? [];
     d.push(card);
     this.journeyDiscard.set(key, d);
@@ -240,8 +266,11 @@ export class Game {
     this.m('moveTotal', move);
     await this.emit({ t: 'diceChosen', player: idx, pick, move, cpGain });
 
+    const zoneBefore = s.board.tiles[p.pos]!.zone;
     const path = await this.moveAlong(p, ctrl, move);
     await this.emit({ t: 'move', player: idx, path });
+    const zoneAfter = s.board.tiles[p.pos]!.zone;
+    if (zoneAfter !== zoneBefore) await this.emit({ t: 'zoneEnter', player: idx, zone: zoneAfter });
     if (p.arrived) return;
 
     const before = { ...p.stats, stamina: p.stamina, cp: p.cp };
@@ -274,12 +303,17 @@ export class Game {
       } else {
         nextId = cur.next[0]!;
       }
+      const prevZone = s.board.tiles[p.pos]!.zone;
       p.pos = nextId;
       path.push(nextId);
+      const nt = s.board.tiles[nextId]!;
+      if (nt.zone !== prevZone) p.stamina = Math.min(p.stamina, this.staminaCap(p)); // 나이가 들면 체력 상한도 달라진다
       if (nextId === s.board.summit) {
         await this.arrive(p);
         break;
       }
+      // 이정표(인생의 갈림길)는 반드시 멈춰 서서 결정한다
+      if (nt.type === 'milestone') break;
     }
     return path;
   }
@@ -338,6 +372,8 @@ export class Game {
       }
       case 'milestone': {
         this.applyEffect(p, { asset: 1 }); // 이정표 축하금
+        await this.resolveMilestone(p, ctrl, tile.zone);
+        this.applyEffect(p, this.lifeDividend(p));
         const zonesDone = tile.zone - s.config.startZone + 1;
         const sum = STAT_KEYS.reduce((a, k) => a + p.stats[k], 0);
         const startSum = STAT_KEYS.reduce((a, k) => a + START_STATS[k], 0);
@@ -355,10 +391,50 @@ export class Game {
     }
   }
 
+  /** 인생 상태가 주는 꾸준한 이득: 이정표를 지날 때마다 받는다 (직업 월급, 가족과의 행복, 집값 등) */
+  lifeDividend(p: PlayerState): Effect {
+    const l = p.life;
+    const e: Effect = {};
+    const add = (k: 'asset' | 'happy' | 'network', n: number) => {
+      e[k] = (e[k] ?? 0) + n;
+    };
+    if (l.career) add('asset', 1);
+    if (l.home) add('asset', 1);
+    if (l.partner) add('happy', 1);
+    if (l.children > 0) add('network', 1);
+    if (l.grandchildren > 0) add('happy', 1);
+    return e;
+  }
+
+  /** 구간 끝에서 인생의 갈림길(진학·취업·결혼·집·은퇴…)을 고른다 */
+  private async resolveMilestone(p: PlayerState, ctrl: Controller, zone: number): Promise<void> {
+    const info = MILESTONES[zone];
+    if (!info) return;
+    const choices: MilestoneChoice[] = info.options.map((o) => {
+      const enabled = meets(o.requires, p.life, p.stats.asset);
+      return { id: o.id, name: o.name, desc: o.desc, effect: o.effect, ...(o.dc ? { dc: o.dc } : {}), ...(o.fail ? { fail: o.fail } : {}), enabled, why: enabled ? '' : reqText(o.requires) };
+    });
+    if (!choices.some((c) => c.enabled)) return;
+    let pick = await ctrl.chooseMilestone(this.state, p.id, zone, info.title, choices);
+    if (!Number.isInteger(pick) || pick < 0 || pick >= choices.length || !choices[pick]!.enabled) pick = choices.findIndex((c) => c.enabled);
+    const opt = info.options[pick]!;
+    let success: boolean | null = null;
+    let effect = opt.effect;
+    if (opt.dc) {
+      success = this.rng.die() >= opt.dc;
+      effect = success ? opt.effect : (opt.fail ?? {});
+    }
+    this.applyEffect(p, effect);
+    this.m(`milestone:${opt.id}`);
+    await this.emit({ t: 'milestone', player: p.id, zone, option: opt.name, success, effect });
+  }
+
   private async resolveJourney(p: PlayerState, ctrl: Controller, tile: Tile): Promise<void> {
     const s = this.state;
     const deck = tile.type as CardDeck;
-    const card = this.drawCard(deck, tile.zone);
+    const drawn = this.drawCard(deck, tile.zone, p);
+    // 지름길은 험해서 판정이 한 단계 어렵다
+    const card: JourneyCard = tile.risky ? { ...drawn, challenge: { ...drawn.challenge, dc: Math.min(6, drawn.challenge.dc + 1) } } : drawn;
     const cost = card.challenge.staminaCost;
     const canSafe = !tile.risky;
     let choice: 'safe' | 'challenge' = await ctrl.chooseCardOption(s, p.id, card, canSafe);

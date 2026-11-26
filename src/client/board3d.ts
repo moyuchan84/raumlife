@@ -293,6 +293,8 @@ export interface Board3D {
   update(players: PlayerView[], current: number, me: number): void;
   animateMove(player: number, path: number[]): void;
   floatText(tileId: number, text: string): void;
+  /** 캐릭터 머리 위에 축하 문구를 띄우고 만세를 시킨다 */
+  celebrate(player: number, text: string): void;
   focus(tileId: number): void;
   setOverview(on: boolean): void;
   resize(): void;
@@ -644,6 +646,9 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
 
   // ── 캐릭터
   interface Tok {
+    stage: number;
+    popUntil: number;
+    avatarKey: string;
     char: Char3D;
     root: THREE.Group;
     ring: THREE.Mesh;
@@ -659,12 +664,14 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
   let me = -1;
 
   const liftOf = (p: PlayerView) => liftOfZone(tiles[p.pos]!.zone);
+  const stageOf = (p: PlayerView) => tiles[p.pos]!.zone;
+  const baseScale = (c: Char3D) => 0.78 * c.look.scale;
   function ensureTok(p: PlayerView): Tok {
     let t = toks.get(p.id);
     if (t) return t;
-    const char = createCharacter(p.avatar);
+    const char = createCharacter(p.avatar, stageOf(p));
     const root = new THREE.Group();
-    char.group.scale.setScalar(0.78);
+    char.group.scale.setScalar(baseScale(char));
     root.add(char.group);
     const col = SEAT_COLORS[p.id % SEAT_COLORS.length]!;
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.14, 8, 26), new THREE.MeshBasicMaterial({ color: col }));
@@ -678,7 +685,7 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
     label.position.y = 4.6;
     root.add(ring, shadow, label);
     scene.add(root);
-    t = { char, root, ring, label, anim: null, cur: pos[p.pos]!.clone(), heading: 0, cheerUntil: 0 };
+    t = { stage: stageOf(p), popUntil: 0, avatarKey: JSON.stringify(p.avatar), char, root, ring, label, anim: null, cur: pos[p.pos]!.clone(), heading: 0, cheerUntil: 0 };
     t.cur.y += liftOf(p);
     toks.set(p.id, t);
     return t;
@@ -752,6 +759,21 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
 
     for (const p of lastPlayers) {
       const k = ensureTok(p);
+      // 다른 나이 구간(섬)에 들어서면 모습이 바뀐다
+      const stg = stageOf(p);
+      if (stg !== k.stage) {
+        const old = k.char.group;
+        const rot = old.rotation.y;
+        k.root.remove(old);
+        k.char = createCharacter(p.avatar, stg);
+        k.char.group.rotation.y = rot;
+        k.root.add(k.char.group);
+        k.stage = stg;
+        k.popUntil = now + 900;
+        k.cheerUntil = Math.max(k.cheerUntil, now + 1400);
+      }
+      const pop = k.popUntil > now ? 1 - (k.popUntil - now) / 900 : 1;
+      k.char.group.scale.setScalar(baseScale(k.char) * (0.55 + 0.45 * (1 - Math.pow(1 - pop, 3)) + Math.sin(pop * Math.PI) * 0.18));
       const base = pos[p.pos]!.clone().add(slotOffset(p));
       base.y += liftOf(p);
       let mode: CharMode = 'idle';
@@ -838,6 +860,15 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
       if (!t || !path.length) return;
       const lifted = (id: number) => pos[id]!.clone().setY(pos[id]!.y + liftOfZone(tiles[id]!.zone));
       t.anim = { pts: [t.cur.clone(), ...path.map(lifted)], t0: performance.now() };
+    },
+    celebrate(player, text) {
+      const t = toks.get(player);
+      if (!t) return;
+      const s = textSprite(text, '#7a2fd0', 9);
+      s.position.set(t.cur.x, t.cur.y + 6.2, t.cur.z);
+      scene.add(s);
+      floats.push({ s, t0: performance.now(), y0: t.cur.y + 2 });
+      t.cheerUntil = performance.now() + 1400;
     },
     floatText(tileId, text) {
       const s = textSprite(text, '#111', 8);

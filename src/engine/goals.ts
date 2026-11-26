@@ -9,6 +9,8 @@ interface CondTemplate {
   /** 이 조건이 의미 있으려면 필요한 최소 구간 수 */
   minZones: number;
   n?: (zones: number) => number;
+  /** 코스가 이 조건을 이룰 수 있게 해 주는지 (인생 목표용) */
+  when?: (c: GameConfig) => boolean;
 }
 
 const CONDITIONS: CondTemplate[] = [
@@ -18,6 +20,12 @@ const CONDITIONS: CondTemplate[] = [
   { cond: 'togetherSummit', minZones: 1 },
   { cond: 'challengesWon', minZones: 1, n: (z) => Math.max(2, Math.round(z * 0.6)) },
   { cond: 'pathsTaken', minZones: 2, n: (z) => Math.max(2, Math.round(z * 0.3)) },
+  // 인생 목표: 코스가 해당 사건이 일어나는 구간을 지나갈 때만 나온다
+  { cond: 'hasCareer', minZones: 1, when: (c) => c.startZone <= 4 && c.endZone >= 4 },
+  { cond: 'hasPartner', minZones: 1, when: (c) => c.startZone <= 5 && c.endZone >= 5 },
+  { cond: 'hasHome', minZones: 1, when: (c) => c.startZone <= 6 && c.endZone >= 6 },
+  { cond: 'hasChild', minZones: 1, when: (c) => c.startZone <= 6 && c.endZone >= 6 },
+  { cond: 'grandchild', minZones: 1, when: (c) => c.startZone <= 8 && c.endZone >= 8 },
 ];
 
 const GOAL_COUNT: Record<Difficulty, { stats: number; conds: number }> = {
@@ -44,7 +52,7 @@ export function generateGoals(config: GameConfig, tuning: Tuning, rng: Rng): Goa
     const target = Math.round(START_STATS[stat] + zones * tuning.perZoneGain * coef);
     goals.push({ kind: 'stat', stat, target });
   }
-  const condPool = rng.shuffle(CONDITIONS.filter((c) => c.minZones <= zones));
+  const condPool = rng.shuffle(CONDITIONS.filter((c) => c.minZones <= zones && (!c.when || c.when(config))));
   for (let i = 0; i < conds && i < condPool.length; i++) {
     const t = condPool[i]!;
     goals.push(t.n ? { kind: 'condition', cond: t.cond, n: t.n(zones) } : { kind: 'condition', cond: t.cond });
@@ -71,6 +79,16 @@ export function goalCompletion(p: PlayerState, g: Goal): number {
       return Math.min(1, t.challengesWon / (g.n ?? 1));
     case 'pathsTaken':
       return Math.min(1, t.pathsTaken / (g.n ?? 1));
+    case 'hasPartner':
+      return p.life.partner ? 1 : 0;
+    case 'hasHome':
+      return p.life.home ? 1 : 0;
+    case 'hasChild':
+      return p.life.children >= 1 ? 1 : 0;
+    case 'hasCareer':
+      return p.life.career ? 1 : 0;
+    case 'grandchild':
+      return p.life.grandchildren >= 1 ? 1 : 0;
   }
 }
 
@@ -97,5 +115,15 @@ export function goalLabel(g: Goal): string {
       return `도전 선택지 ${g.n}번 이상 성공`;
     case 'pathsTaken':
       return `진로 ${g.n}번 이상 선택`;
+    case 'hasPartner':
+      return '💞 인생의 동반자 만나기';
+    case 'hasHome':
+      return '🏠 내 집 마련하기';
+    case 'hasChild':
+      return '👶 아이를 맞이하기';
+    case 'hasCareer':
+      return '💼 직업 갖기';
+    case 'grandchild':
+      return '🧒 손주 보기';
   }
 }

@@ -356,6 +356,8 @@ function eventDelay(e: GameEvent): number {
     case 'tile': return Object.keys(e.delta).length ? 900 : 250;
     case 'card': return 2300;
     case 'weather': return 1700;
+    case 'zoneEnter': return 2200; // 나이가 드는 연출
+    case 'milestone': return 2600;
     case 'pathOption': return 900;
     case 'lodge': return 700;
     case 'sabotage': return 1400;

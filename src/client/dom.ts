@@ -1,4 +1,4 @@
-import type { Effect } from '../engine';
+import type { Effect, LifeState } from '../engine';
 
 type Child = Node | string | number | null | undefined | false | Child[];
 type Attrs = Record<string, unknown>;
@@ -33,6 +33,14 @@ export function fmtEffect(e: Effect): string {
   for (const k of ['asset', 'happy', 'network', 'growth'] as const) if (e[k]) parts.push(`${STAT_ICON[k]}${sign(e[k]!)}`);
   if (e.stamina) parts.push(`💪${sign(e.stamina)}`);
   if (e.cp) parts.push(`✨${sign(e.cp)}`);
+  const l = e.life;
+  if (l) {
+    if (l.partner) parts.push('💞동반자');
+    if (l.children) parts.push(`👶자녀+${l.children}`);
+    if (l.grandchildren) parts.push(`🧒손주+${l.grandchildren}`);
+    if (l.home) parts.push('🏠내 집');
+    if (l.career) parts.push(`💼${l.career}`);
+  }
   return parts.length ? parts.join(' ') : '변화 없음';
 }
 
@@ -42,4 +50,15 @@ export function pct(x: number): string {
 
 export function clear(el: HTMLElement) {
   el.replaceChildren();
+}
+
+/** 인생 상태를 짧게: 💼회사원 💞 👶×1 🏠 🧒×1 */
+export function lifeText(l: LifeState): string {
+  const parts: string[] = [];
+  if (l.career) parts.push(`💼${l.career}`);
+  if (l.partner) parts.push('💞');
+  if (l.children) parts.push(`👶×${l.children}`);
+  if (l.home) parts.push('🏠');
+  if (l.grandchildren) parts.push(`🧒×${l.grandchildren}`);
+  return parts.length ? parts.join(' ') : '아직 없음';
 }

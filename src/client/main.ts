@@ -9,7 +9,7 @@ import {
   type StartedInfo,
   type StateView,
 } from '../shared/protocol';
-import { clear, fmtEffect, h, pct } from './dom';
+import { clear, fmtEffect, h, lifeText, pct } from './dom';
 import { draw, layoutBoard, TILE_NAME, type Layout, type Pt } from './board';
 import { Net } from './net';
 import { DEFAULT_AVATAR, SEAT_COLORS, sanitizeAvatar, type Avatar } from '../shared/avatar';
@@ -64,10 +64,10 @@ const net = new Net(() => ({ t: 'hello', name: S.name || '손님', avatar: S.ava
 net.onStatus = (on) => connEl.classList.toggle('hidden', on);
 net.onMsg = onMsg;
 
-function avatarEl(a: Avatar, size = 40, ring?: string): HTMLElement {
+function avatarEl(a: Avatar, size = 40, ring?: string, stage = 5): HTMLElement {
   return h('img', {
     class: 'avatar-img',
-    src: avatarImage(a, size),
+    src: avatarImage(a, size, stage),
     width: size,
     height: size,
     alt: '',
@@ -471,6 +471,10 @@ function focusTile(tileId: number) {
   G.scroll.scrollTo({ top: p.y * scale - G.scroll.clientHeight * 0.55, left: p.x * scale - G.scroll.clientWidth / 2, behavior: 'smooth' });
 }
 
+function stageOfTile(tileId: number): number {
+  return S.info!.board.tiles[tileId]!.zone;
+}
+
 function zoneOf(tileId: number): string {
   const t = S.info!.board.tiles[tileId]!;
   return ZONES[t.zone - 1]!.island;
@@ -520,10 +524,11 @@ function updateGame() {
     const a = avg(p.completion);
     const showTeam = info.teams;
     list.append(h('div', { class: `pl ${p.id === st.current && !st.finished ? 'cur' : ''} ${p.id === st.me ? 'me' : ''} ${p.connected ? '' : 'off'}` },
-      h('div', { class: 'tk' }, avatarEl(p.avatar, 40, SEAT_COLORS[p.id])),
+      h('div', { class: 'tk' }, avatarEl(p.avatar, 40, SEAT_COLORS[p.id], stageOfTile(p.pos))),
       h('div', null,
         h('div', { class: 'nm' }, p.name, p.id === st.me ? ' (나)' : '', showTeam ? ` ${p.team === 0 ? '🔵' : '🔴'}` : '', !p.connected ? ' · 오프라인(봇이 대신)' : ''),
-        h('div', { class: 'meta' }, `${zoneOf(p.pos)} · 💪${p.stamina} ✨${p.cp}${p.arrived ? ` · 🏝️${p.arrivalRank}등 도착` : ''}`),
+        h('div', { class: 'meta' }, `${zoneOf(p.pos)} · ${ZONES[stageOfTile(p.pos) - 1]!.ages}세 · 💪${p.stamina}/${p.staminaCap} ✨${p.cp}${p.arrived ? ` · 🏝️${p.arrivalRank}등 도착` : ''}`),
+        h('div', { class: 'meta' }, lifeText(p.life)),
       ),
       h('div', { class: 'sc' }, p.exact ? pct(a) : `~${pct(a)}`),
     ));
@@ -594,6 +599,20 @@ function onEvent(e: GameEvent) {
         G.v3?.animateMove(e.player, e.path);
         focusTile(e.path[e.path.length - 1]!);
       }
+      break;
+    }
+    case 'zoneEnter': {
+      const z = ZONES[e.zone - 1]!;
+      const label = `🎂 ${z.name} (${z.ages}세)`;
+      toast([h('h4', null, `🎂 ${who(e.player)}의 새로운 나이`), h('div', null, `${z.name} (${z.ages}세) · ${z.island}`), h('div', { class: 'fx' }, `체력 한계 💪${S.state.players[e.player]?.staminaCap ?? ''}`)], 'good', 2400);
+      addLog(`${who(e.player)} ${z.island} 도착 — ${z.name} (${z.ages}세)`, true);
+      G.v3?.celebrate(e.player, label);
+      break;
+    }
+    case 'milestone': {
+      const verdict = e.success === null ? '' : e.success ? ' (성공!)' : ' (아쉽게 실패…)';
+      toast([h('h4', null, `🚩 ${who(e.player)}의 선택`), h('div', null, `${e.option}${verdict}`), h('div', { class: 'fx' }, fmtEffect(e.effect))], e.success === false ? 'bad' : 'good', 3000);
+      addLog(`${who(e.player)} 인생의 갈림길: ${e.option}${verdict} → ${fmtEffect(e.effect)}`, true);
       break;
     }
     case 'tile': {
@@ -725,6 +744,14 @@ function renderAsk() {
       opts.append(opt('선택하지 않음', '', () => answer(-1)));
       break;
     }
+    case 'milestone': {
+      box.append(h('h4', null, `🚩 ${a.title}`), h('div', { class: 'sub' }, `인생의 갈림길! 하나를 골라요. 지금의 나: ${lifeText(a.life)} · 💰${a.asset}`));
+      a.options.forEach((o, i) => {
+        const chance = o.dc ? ` · 성공 확률 ${pct(successProb(o.dc))}${o.fail ? ` (실패 시 ${fmtEffect(o.fail)})` : ''}` : '';
+        opts.append(opt(o.name, o.enabled ? `${o.desc} → ${fmtEffect(o.effect)}${chance}` : `선택할 수 없어요: ${o.why}`, () => answer(i), !o.enabled, o.enabled));
+      });
+      break;
+    }
     case 'lodge':
       box.append(h('h4', null, '🏠 보금자리'), h('div', { class: 'sub' }, `💰${a.cost}을 내고 ${fmtEffect(a.effect)} (보유 💰${a.asset})`));
       opts.append(opt('구입한다', `💰-${a.cost} → ${fmtEffect(a.effect)}`, () => answer(true), a.asset < a.cost, true), opt('지나간다', '', () => answer(false)));
@@ -754,9 +781,10 @@ function viewResult(r: GameResult): HTMLElement {
     const p = players[id];
     return h('div', { class: `rank ${idx === 0 ? 'first' : ''}` },
       h('div', { style: { fontSize: '20px', fontWeight: 800 } }, idx === 0 ? '🏆' : `${idx + 1}`),
-      h('div', null, p ? avatarEl(p.avatar, 44, SEAT_COLORS[id]) : ''),
+      h('div', null, p ? avatarEl(p.avatar, 44, SEAT_COLORS[id], stageOfTile(p.pos)) : ''),
       h('div', null,
         h('div', null, p?.name ?? `P${id + 1}`, id === S.state?.me ? ' (나)' : '', info(r, id)),
+        h('div', { class: 'muted', style: { fontSize: '12.5px' } }, p ? `인생: ${lifeText(p.life)}` : ''),
         h('div', { class: 'muted', style: { fontSize: '12.5px' } },
           `달성률 ${sc.base.toFixed(1)}`, sc.arrivalBonus ? ` + 도착 ${sc.arrivalBonus}` : '', sc.penalty ? ` − 미도착 ${sc.penalty}` : ''),
         ...goals.map((g, gi) => h('div', { class: 'goal', style: { margin: '4px 0 0' } },

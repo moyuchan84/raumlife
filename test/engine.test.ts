@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Game, buildBoard, distancesToSummit, goalCompletion, DEFAULT_TUNING, DECKS } from '../src/engine';
-import type { Controller, GameConfig, GameState, JourneyCard } from '../src/engine';
+import type { Controller, Effect, GameConfig, GameState, JourneyCard } from '../src/engine';
 import { createBot } from '../src/ai/bots';
 
 const cfg = (over: Partial<GameConfig> = {}): GameConfig => ({
@@ -26,6 +26,7 @@ class SafeCtrl implements Controller {
   chooseCpBoost(): number { return 0; }
   wantReroll(): boolean { return false; }
   choosePathOption(_s: GameState, _me: number, _z: number, a: boolean[]): number { return a.findIndex(Boolean); }
+  chooseMilestone(_s: GameState, _me: number, _z: number, _t: string, o: { enabled: boolean }[]): number { return o.findIndex((x) => x.enabled); }
   chooseLodge(): boolean { return false; }
   chooseSabotage(_s: GameState, _me: number, targets: number[]): number | null {
     this.sabotageTargets.push(targets);
@@ -83,7 +84,7 @@ describe('새 칸과 카드', () => {
         expect(DECKS[deck].filter((c) => c.zone === 0).length).toBeGreaterThanOrEqual(5); // 공통 카드
       }
     }
-    const sum = (e: Record<string, number | undefined>) => Object.values(e).reduce<number>((a, b) => a + (b ?? 0), 0);
+    const sum = (e: Effect) => (['asset', 'happy', 'network', 'growth', 'stamina'] as const).reduce((a, k) => a + (e[k] ?? 0), 0);
     for (const c of DECKS.trouble) {
       expect(sum(c.safe), c.title).toBeLessThan(0); // 참으면 손해
       expect(sum(c.challenge.lose), c.title).toBeLessThanOrEqual(sum(c.safe)); // 맞서다 실패하면 더 아프다
