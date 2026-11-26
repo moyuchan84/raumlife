@@ -14,6 +14,7 @@ import {
 import { clear, fmtEffect, h, pct } from './dom';
 import { draw, layoutBoard, TILE_NAME, type Layout, type Pt } from './board';
 import { Net } from './net';
+import { createBoard3D, type Board3D } from './board3d';
 
 // ───────── 앱 상태 ─────────
 const store = {
@@ -312,6 +313,9 @@ interface GameUI {
   raf: number;
   diceEl: HTMLElement | null;
   lastTurn: number;
+  three: HTMLElement;
+  v3: Board3D | null;
+  mode: '2d' | '3d';
 }
 let G: GameUI | null = null;
 
@@ -326,6 +330,7 @@ function buildGame() {
   canvas.height = layout.height * dpr;
   const ctx = canvas.getContext('2d')!;
   const scroll = h('div', { class: 'board-scroll' }, canvas);
+  const three = h('div', { class: 'three hidden' });
   const topbar = h('div', { class: 'topbar' });
   const overlay = h('div', { class: 'overlay' });
   const askbar = h('div', { class: 'askbar' });
@@ -333,12 +338,12 @@ function buildGame() {
   const playersEl = h('section');
   const logEl = h('div', { class: 'log' });
   const root = h('div', { class: 'game' },
-    h('div', { class: 'stage-wrap' }, topbar, scroll, overlay, askbar),
+    h('div', { class: 'stage-wrap' }, topbar, scroll, three, overlay, askbar),
     h('div', { class: 'side' }, goalsEl, playersEl, h('section', null, h('h3', null, '진행 기록'), logEl)),
   );
   clear(app);
   app.append(root);
-  G = { root, canvas, ctx, layout, scroll, topbar, goalsEl, playersEl, logEl, overlay, askbar, anims: new Map(), tokenPos: new Map(), floats: [], raf: 0, diceEl: null, lastTurn: -1 };
+  G = { root, canvas, ctx, layout, scroll, topbar, goalsEl, playersEl, logEl, overlay, askbar, anims: new Map(), tokenPos: new Map(), floats: [], raf: 0, diceEl: null, lastTurn: -1, three, v3: null, mode: '2d' };
   // 처음엔 내 말이 있는 곳(맨 아래)으로
   requestAnimationFrame(() => (scroll.scrollTop = scroll.scrollHeight));
   const loop = (now: number) => {
@@ -347,17 +352,51 @@ function buildGame() {
     G.raf = requestAnimationFrame(loop);
   };
   G.raf = requestAnimationFrame(loop);
+  setMode(store.get('lh.view') === '2d' ? '2d' : '3d');
   updateGame();
   renderAsk();
 }
 
+/** 2D / 3D 보드 전환. WebGL 을 못 쓰면 2D 로 되돌린다 */
+function setMode(mode: '2d' | '3d') {
+  if (!G || !S.info) return;
+  if (mode === '3d' && !G.v3) {
+    try {
+      G.three.classList.remove('hidden');
+      G.v3 = createBoard3D(G.three, S.info.board.tiles, S.info.startZone, S.info.endZone);
+    } catch (err) {
+      console.warn('3D 를 시작할 수 없어 2D 로 표시합니다', err);
+      G.three.classList.add('hidden');
+      G.v3 = null;
+      mode = '2d';
+    }
+  }
+  G.mode = mode;
+  G.three.classList.toggle('hidden', mode !== '3d');
+  G.scroll.classList.toggle('hidden', mode !== '2d');
+  store.set('lh.view', mode);
+  if (mode === '3d') G.v3?.resize();
+  if (S.state) updateGame();
+}
+
 function stopGame() {
-  if (G) cancelAnimationFrame(G.raf);
+  if (G) {
+    cancelAnimationFrame(G.raf);
+    G.v3?.destroy();
+  }
   G = null;
 }
 
 function frame(now: number, dpr: number) {
   if (!G || !S.state || !S.info) return;
+  // 결정 타이머
+  const bar = document.getElementById('ask-timer');
+  if (bar && S.ask) {
+    const total = (S.lobby?.settings.decisionSeconds ?? 40) * 1000;
+    const left = Math.max(0, S.ask.deadline - Date.now());
+    (bar as HTMLElement).style.width = `${Math.min(100, (left / total) * 100)}%`;
+  }
+  if (G.mode === '3d') return;
   // 이동 애니메이션
   for (const [id, a] of [...G.anims]) {
     const k = (now - a.t0) / a.stepMs;
@@ -396,17 +435,14 @@ function frame(now: number, dpr: number) {
     G.ctx.fillText(f.text, f.x, f.y - 24 - t * 26);
     G.ctx.globalAlpha = 1;
   }
-  // 결정 타이머
-  const bar = document.getElementById('ask-timer');
-  if (bar && S.ask) {
-    const total = (S.lobby?.settings.decisionSeconds ?? 40) * 1000;
-    const left = Math.max(0, S.ask.deadline - Date.now());
-    (bar as HTMLElement).style.width = `${Math.min(100, (left / total) * 100)}%`;
-  }
 }
 
 function focusTile(tileId: number) {
   if (!G) return;
+  if (G.mode === '3d') {
+    G.v3?.focus(tileId);
+    return;
+  }
   const p = G.layout.pos[tileId]!;
   const scale = G.canvas.clientWidth / G.layout.width;
   G.scroll.scrollTo({ top: p.y * scale - G.scroll.clientHeight * 0.55, left: p.x * scale - G.scroll.clientWidth / 2, behavior: 'smooth' });
@@ -426,6 +462,7 @@ function updateGame() {
   const st = S.state;
   const info = S.info;
   const meP = st.players[st.me]!;
+  G.v3?.update(st.players, st.current, st.me);
 
   // 상단 바
   clear(G.topbar);
@@ -434,6 +471,7 @@ function updateGame() {
     h('span', { class: 'pill' }, `${ZONES[info.startZone - 1]!.name} → ${ZONES[info.endZone - 1]!.name}`),
     ...(st.countdownLeft !== null ? [h('span', { class: 'pill alert' }, `⏳ 마감까지 ${st.countdownLeft}라운드`)] : []),
     ...(st.finished ? [] : [h('span', { class: 'pill', style: { marginLeft: 'auto' } }, `${who(st.current)}의 차례`)]),
+    h('button', { class: 'small', title: '보드 보기 전환', onclick: () => setMode(G?.mode === '3d' ? '2d' : '3d') }, G.mode === '3d' ? '2D로 보기' : '3D로 보기'),
   );
 
   // 목표
@@ -529,6 +567,7 @@ function onEvent(e: GameEvent) {
       if (prev && e.path.length) {
         const pts = [G.layout.pos[prev.pos]!, ...e.path.map((id) => G!.layout.pos[id]!)];
         G.anims.set(e.player, { pts, t0: performance.now(), stepMs: 300 });
+        G.v3?.animateMove(e.player, e.path);
         focusTile(e.path[e.path.length - 1]!);
       }
       break;
@@ -539,6 +578,7 @@ function onEvent(e: GameEvent) {
       if (Object.keys(e.delta).length) {
         const p = G.layout.pos[e.tile]!;
         G.floats.push({ x: p.x, y: p.y, text: txt, t0: performance.now() });
+        G.v3?.floatText(e.tile, txt);
         addLog(`${who(e.player)} ${TILE_NAME[t.type]} 칸 → ${txt}`, e.player === S.state.me);
       } else if (t.type !== 'fork') {
         addLog(`${who(e.player)} ${TILE_NAME[t.type]} 칸`);

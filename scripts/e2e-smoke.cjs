@@ -9,7 +9,7 @@ const OUT = process.env.SHOTS || '/tmp/lh-shots';
 require('node:fs').mkdirSync(OUT, { recursive: true });
 const URL = process.env.URL || 'http://localhost:3111';
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 820 }, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
   const errors = [];
