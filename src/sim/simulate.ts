@@ -70,7 +70,7 @@ function quantile(xs: number[], q: number): number {
   return s[Math.min(s.length - 1, Math.floor(q * s.length))]!;
 }
 
-export function simulate(args: Args) {
+export async function simulate(args: Args) {
   const results: { res: GameResult; game: Game }[] = [];
   for (let g = 0; g < args.games; g++) {
     const seed = args.seed * 100003 + g;
@@ -85,14 +85,14 @@ export function simulate(args: Args) {
     };
     const game = new Game(config);
     const ctrls = args.bots.map((b, i) => createBot(b, seed * 7 + i));
-    results.push({ res: game.run(ctrls), game });
+    results.push({ res: await game.run(ctrls), game });
   }
   return results;
 }
 
-function main() {
+async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const results = simulate(args);
+  const results = await simulate(args);
   const P = args.players;
   const zones = args.end - args.start + 1;
 

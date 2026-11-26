@@ -1,6 +1,7 @@
 import type {
   Effect,
   GameConfig,
+  GameEvent,
   GameResult,
   GameState,
   JourneyCard,
@@ -30,6 +31,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 export interface GameOptions {
   verbose?: boolean;
+  /** 이벤트 수신. Promise 를 돌려주면 엔진이 기다린다 (연출 속도 조절용) */
+  onEvent?: (e: GameEvent) => void | Promise<void>;
 }
 
 export class Game {
@@ -97,6 +100,9 @@ export class Game {
   private m(key: string, n = 1) {
     this.metrics[key] = (this.metrics[key] ?? 0) + n;
   }
+  private emit(e: GameEvent): void | Promise<void> {
+    return this.options.onEvent?.(e);
+  }
   private log(msg: string) {
     if (this.options.verbose) this.state.log.push(`[R${this.state.round}] ${msg}`);
   }
@@ -139,21 +145,24 @@ export class Game {
   }
 
   // ───────── 진행 ─────────
-  run(controllers: Controller[]): GameResult {
+  async run(controllers: Controller[]): Promise<GameResult> {
     if (controllers.length !== this.state.players.length) throw new Error('컨트롤러 수 불일치');
-    while (!this.state.finished) this.playRound(controllers);
-    return this.result();
+    while (!this.state.finished) await this.playRound(controllers);
+    const res = this.result();
+    await this.emit({ t: 'end', result: res });
+    return res;
   }
 
-  playRound(ctrls: Controller[]): void {
+  async playRound(ctrls: Controller[]): Promise<void> {
     const s = this.state;
     const P = s.players.length;
-    if (s.round > 1) this.applyCatchUp();
+    await this.emit({ t: 'roundStart', round: s.round });
+    if (s.round > 1) await this.applyCatchUp();
     // 라운드마다 시작 플레이어가 한 칸씩 돈다 (자리 유리함 완화)
     for (let k = 0; k < P; k++) {
       const idx = (s.round - 1 + k) % P;
       s.current = idx;
-      this.playTurn(idx, ctrls[idx]!);
+      await this.playTurn(idx, ctrls[idx]!);
     }
     // 종료 판정
     const allArrived = s.players.every((p) => p.arrived);
@@ -177,7 +186,7 @@ export class Game {
   private endedBy: 'allArrived' | 'countdown' = 'allArrived';
 
   /** 하위 1/3 에게 CP 보너스 (도착 안 한 플레이어만) */
-  private applyCatchUp() {
+  private async applyCatchUp() {
     const s = this.state;
     const n = Math.floor(s.players.length / 3);
     if (n === 0) return;
@@ -185,20 +194,24 @@ export class Game {
       .filter((p) => !p.arrived)
       .map((p) => ({ p, v: this.baseScore(p) }))
       .sort((a, b) => a.v - b.v);
+    const got: number[] = [];
     for (const { p } of ranked.slice(0, n)) {
       this.applyEffect(p, { cp: s.tuning.catchUpCp });
       this.m('catchUpCp');
+      got.push(p.id);
     }
+    if (got.length) await this.emit({ t: 'catchUp', players: got });
   }
 
-  private playTurn(idx: number, ctrl: Controller): void {
+  private async playTurn(idx: number, ctrl: Controller): Promise<void> {
     const s = this.state;
     const p = s.players[idx]!;
     this.playerTurns++;
     p.track.turns++;
 
+    await this.emit({ t: 'turnStart', player: idx, round: s.round });
     if (p.arrived) {
-      this.keeperAction(p, ctrl);
+      await this.keeperAction(p, ctrl);
       return;
     }
 
@@ -208,12 +221,14 @@ export class Game {
       this.m('exhausts');
       this.applyEffect(p, { stamina: 3 });
       this.log(`${p.name} 탈진 → 휴식`);
+      await this.emit({ t: 'rest', player: idx });
       return;
     }
 
     // 주사위 2개: 하나는 이동, 나머지가 4 이상이면 CP+1, 더블이면 CP+1
     const dice: [number, number] = [this.rng.die(), this.rng.die()];
-    const pick = ctrl.chooseDie(s, idx, dice);
+    await this.emit({ t: 'dice', player: idx, dice });
+    const pick = await ctrl.chooseDie(s, idx, dice);
     const move = dice[pick];
     const left = pick === 0 ? dice[1] : dice[0];
     let cpGain = 0;
@@ -221,22 +236,32 @@ export class Game {
     if (dice[0] === dice[1]) cpGain++;
     if (cpGain) this.applyEffect(p, { cp: cpGain });
     this.m('moveTotal', move);
+    await this.emit({ t: 'diceChosen', player: idx, pick, move, cpGain });
 
-    this.moveAlong(p, ctrl, move);
+    const path = await this.moveAlong(p, ctrl, move);
+    await this.emit({ t: 'move', player: idx, path });
     if (p.arrived) return;
 
-    this.resolveTile(p, ctrl, s.board.tiles[p.pos]!);
-    this.sabotagePhase(p, ctrl);
+    const before = { ...p.stats, stamina: p.stamina, cp: p.cp };
+    const tile = s.board.tiles[p.pos]!;
+    await this.resolveTile(p, ctrl, tile);
+    const delta: Effect = {};
+    for (const k of STAT_KEYS) if (p.stats[k] !== before[k]) delta[k] = p.stats[k] - before[k];
+    if (p.stamina !== before.stamina) delta.stamina = p.stamina - before.stamina;
+    if (p.cp !== before.cp) delta.cp = p.cp - before.cp;
+    await this.emit({ t: 'tile', player: idx, tile: tile.id, tileType: tile.type, delta });
+    await this.sabotagePhase(p, ctrl);
   }
 
-  private moveAlong(p: PlayerState, ctrl: Controller, steps: number) {
+  private async moveAlong(p: PlayerState, ctrl: Controller, steps: number): Promise<number[]> {
     const s = this.state;
+    const path: number[] = [];
     for (let i = 0; i < steps; i++) {
       const cur = s.board.tiles[p.pos]!;
       if (cur.id === s.board.summit) break;
       let nextId: number;
       if (cur.next.length > 1) {
-        const c = ctrl.choosePath(s, p.id, cur.next);
+        const c = await ctrl.choosePath(s, p.id, cur.next);
         nextId = cur.next[clamp(c, 0, cur.next.length - 1)]!;
         if (s.board.tiles[nextId]!.route === 'short') {
           p.track.shortcuts++;
@@ -248,14 +273,16 @@ export class Game {
         nextId = cur.next[0]!;
       }
       p.pos = nextId;
+      path.push(nextId);
       if (nextId === s.board.summit) {
-        this.arrive(p);
+        await this.arrive(p);
         break;
       }
     }
+    return path;
   }
 
-  private arrive(p: PlayerState) {
+  private async arrive(p: PlayerState) {
     const s = this.state;
     p.arrived = true;
     p.arrivalRank = ++s.arrivalCount;
@@ -273,9 +300,11 @@ export class Game {
       s.countdownLeft = cd;
     }
     this.log(`${p.name} 정상 도착 (${p.arrivalRank}등)`);
+    await this.emit({ t: 'arrive', player: p.id, rank: p.arrivalRank });
+    if (s.arrivalCount === 1 && s.countdownLeft !== null) await this.emit({ t: 'countdown', rounds: s.countdownLeft });
   }
 
-  private resolveTile(p: PlayerState, ctrl: Controller, tile: Tile) {
+  private async resolveTile(p: PlayerState, ctrl: Controller, tile: Tile): Promise<void> {
     const s = this.state;
     this.m(`tile:${tile.type}`);
     switch (tile.type) {
@@ -290,15 +319,17 @@ export class Game {
       case 'path':
         return this.resolvePath(p, ctrl, tile);
       case 'lodge':
-        if (p.stats.asset >= LODGE_COST && ctrl.chooseLodge(s, p.id)) {
+        if (p.stats.asset >= LODGE_COST && (await ctrl.chooseLodge(s, p.id))) {
           this.applyEffect(p, { asset: -LODGE_COST, ...LODGE_EFFECT });
           this.m('lodgeBought');
+          await this.emit({ t: 'lodge', player: p.id });
         }
         return;
       case 'weather': {
         const w = this.drawWeather();
         for (const o of s.players) this.applyEffect(o, w.effect);
         this.log(`날씨: ${w.title}`);
+        await this.emit({ t: 'weather', player: p.id, card: w });
         return;
       }
       case 'milestone': {
@@ -320,28 +351,31 @@ export class Game {
     }
   }
 
-  private resolveJourney(p: PlayerState, ctrl: Controller, tile: Tile) {
+  private async resolveJourney(p: PlayerState, ctrl: Controller, tile: Tile): Promise<void> {
     const s = this.state;
     const card = this.drawJourney(tile.zone);
     const cost = card.challenge.staminaCost;
     const canSafe = !tile.risky;
-    let choice: 'safe' | 'challenge' = ctrl.chooseCardOption(s, p.id, card, canSafe);
+    let choice: 'safe' | 'challenge' = await ctrl.chooseCardOption(s, p.id, card, canSafe);
     if (!canSafe) choice = 'challenge';
     else if (choice === 'challenge' && p.stamina < cost) choice = 'safe';
 
     if (choice === 'safe') {
       this.applyEffect(p, card.safe);
       this.m('safeChosen');
+      await this.emit({ t: 'card', player: p.id, card, choice, boost: 0, roll: null, success: null, rerolled: false });
       return;
     }
     this.m('challengeTried');
     p.track.challengesTried++;
     this.applyEffect(p, { stamina: -Math.min(cost, p.stamina) });
-    const boost = clamp(ctrl.chooseCpBoost(s, p.id, card), 0, Math.min(2, p.cp));
+    const boost = clamp(await ctrl.chooseCpBoost(s, p.id, card), 0, Math.min(2, p.cp));
     if (boost) this.applyEffect(p, { cp: -boost });
     let roll = this.rng.die();
     let ok = roll + boost >= card.challenge.dc;
-    if (!ok && p.cp >= s.tuning.rerollCost && ctrl.wantReroll(s, p.id, card, roll)) {
+    let rerolled = false;
+    if (!ok && p.cp >= s.tuning.rerollCost && (await ctrl.wantReroll(s, p.id, card, roll))) {
+      rerolled = true;
       this.applyEffect(p, { cp: -s.tuning.rerollCost });
       roll = this.rng.die();
       ok = roll + boost >= card.challenge.dc;
@@ -354,9 +388,10 @@ export class Game {
     } else {
       this.applyEffect(p, card.challenge.lose);
     }
+    await this.emit({ t: 'card', player: p.id, card, choice, boost, roll, success: ok, rerolled });
   }
 
-  private resolvePath(p: PlayerState, ctrl: Controller, tile: Tile) {
+  private async resolvePath(p: PlayerState, ctrl: Controller, tile: Tile): Promise<void> {
     const s = this.state;
     const cap = Math.ceil(s.players.length / 2);
     const available = [0, 1, 2].map((i) => (s.pathSlots[`${tile.zone}:${i}`] ?? 0) < cap);
@@ -364,13 +399,14 @@ export class Game {
       this.m('pathAllFull');
       return;
     }
-    const pick = ctrl.choosePathOption(s, p.id, tile.zone, available);
+    const pick = await ctrl.choosePathOption(s, p.id, tile.zone, available);
     if (pick < 0 || pick > 2 || !available[pick]) return;
     const key = `${tile.zone}:${pick}`;
     s.pathSlots[key] = (s.pathSlots[key] ?? 0) + 1;
     this.applyEffect(p, PATH_ARCHETYPES[pick]!);
     p.track.pathsTaken++;
     this.m('pathTaken');
+    await this.emit({ t: 'pathOption', player: p.id, zone: tile.zone, option: pick });
   }
 
   private sabotageTargets(p: PlayerState, free: boolean): number[] {
@@ -388,12 +424,12 @@ export class Game {
       .map((o) => o.id);
   }
 
-  private sabotagePhase(p: PlayerState, ctrl: Controller) {
+  private async sabotagePhase(p: PlayerState, ctrl: Controller): Promise<void> {
     const s = this.state;
     if (p.cp < s.tuning.sabotageCost) return;
     const targets = this.sabotageTargets(p, false);
     if (!targets.length) return;
-    const t = ctrl.chooseSabotage(s, p.id, targets, false);
+    const t = await ctrl.chooseSabotage(s, p.id, targets, false);
     if (t === null || !targets.includes(t)) return;
     const target = s.players[t]!;
     this.applyEffect(p, { cp: -s.tuning.sabotageCost });
@@ -402,17 +438,19 @@ export class Game {
     target.sabotageImmuneUntilRound = s.round + 1; // 연속 방해 방지
     this.m('sabotages');
     this.log(`${p.name} → ${target.name} 방해`);
+    await this.emit({ t: 'sabotage', from: p.id, to: target.id, free: false });
   }
 
   /** 정상 지킴이 행동: 무료, 약한 효과 */
-  private keeperAction(p: PlayerState, ctrl: Controller) {
+  private async keeperAction(p: PlayerState, ctrl: Controller): Promise<void> {
     const s = this.state;
     const targets = this.sabotageTargets(p, true);
     if (!targets.length) return;
-    const t = ctrl.chooseSabotage(s, p.id, targets, true);
+    const t = await ctrl.chooseSabotage(s, p.id, targets, true);
     if (t === null || !targets.includes(t)) return;
     this.applyEffect(s.players[t]!, WIND_EFFECT);
     this.m('winds');
+    await this.emit({ t: 'sabotage', from: p.id, to: t, free: true });
   }
 
   // ───────── 점수 ─────────

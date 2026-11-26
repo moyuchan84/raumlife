@@ -164,3 +164,22 @@ export interface GameResult {
   /** 플레이어 총 턴 수 (소요 시간 추정용) */
   playerTurns: number;
 }
+
+/** 화면 연출/로그용 이벤트. 엔진이 진행하면서 순서대로 내보낸다. */
+export type GameEvent =
+  | { t: 'roundStart'; round: number }
+  | { t: 'turnStart'; player: number; round: number }
+  | { t: 'rest'; player: number }
+  | { t: 'dice'; player: number; dice: [number, number] }
+  | { t: 'diceChosen'; player: number; pick: 0 | 1; move: number; cpGain: number }
+  | { t: 'move'; player: number; path: number[] }
+  | { t: 'tile'; player: number; tile: number; tileType: TileType; delta: Effect }
+  | { t: 'card'; player: number; card: JourneyCard; choice: 'safe' | 'challenge'; boost: number; roll: number | null; success: boolean | null; rerolled: boolean }
+  | { t: 'weather'; player: number; card: WeatherCard }
+  | { t: 'pathOption'; player: number; zone: number; option: number }
+  | { t: 'lodge'; player: number }
+  | { t: 'sabotage'; from: number; to: number; free: boolean }
+  | { t: 'catchUp'; players: number[] }
+  | { t: 'arrive'; player: number; rank: number }
+  | { t: 'countdown'; rounds: number }
+  | { t: 'end'; result: GameResult };

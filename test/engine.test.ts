@@ -34,7 +34,7 @@ class SafeCtrl implements Controller {
 }
 
 describe('보드', () => {
-  it('모든 칸에서 정상에 도달할 수 있다', () => {
+  it('모든 칸에서 정상에 도달할 수 있다', async () => {
     for (let a = 1; a <= 10; a++) {
       for (let b = a; b <= 10; b++) {
         const board = buildBoard(a, b);
@@ -44,7 +44,7 @@ describe('보드', () => {
       }
     }
   });
-  it('갈림길은 둘레길(0)·지름길(1) 두 갈래이고 지름길이 더 짧다', () => {
+  it('갈림길은 둘레길(0)·지름길(1) 두 갈래이고 지름길이 더 짧다', async () => {
     const board = buildBoard(1, 10);
     const { min, max } = distancesToSummit(board);
     const forks = board.tiles.filter((t) => t.type === 'fork');
@@ -57,12 +57,12 @@ describe('보드', () => {
       expect(min[f.next[1]!]!).toBeLessThan(max[f.next[0]!]!);
     }
   });
-  it('전 생애 둘레길 길이는 112칸, 첫/끝 구간은 8칸', () => {
+  it('전 생애 둘레길 길이는 112칸, 첫/끝 구간은 8칸', async () => {
     const board = buildBoard(1, 10);
     const { max } = distancesToSummit(board);
     expect(max[board.start]! + 1).toBe(8 + 8 * 12 + 8);
   });
-  it('잘못된 구간은 거부', () => {
+  it('잘못된 구간은 거부', async () => {
     expect(() => buildBoard(5, 3)).toThrow();
     expect(() => buildBoard(0, 3)).toThrow();
     expect(() => buildBoard(1, 11)).toThrow();
@@ -70,11 +70,11 @@ describe('보드', () => {
 });
 
 describe('결정론', () => {
-  it('같은 시드 → 같은 결과', () => {
+  it('같은 시드 → 같은 결과', async () => {
     const run = () => new Game(cfg({ seed: 42 })).run(Array.from({ length: 4 }, (_, i) => createBot('greedy', i)));
-    expect(JSON.stringify(run())).toBe(JSON.stringify(run()));
+    expect(JSON.stringify(await run())).toBe(JSON.stringify(await run()));
   });
-  it('다른 시드 → 다른 목표/결과가 나온다', () => {
+  it('다른 시드 → 다른 목표/결과가 나온다', async () => {
     const a = new Game(cfg({ seed: 1 })).state.goals;
     const diffs = Array.from({ length: 10 }, (_, i) => new Game(cfg({ seed: i + 2 })).state.goals).filter(
       (g) => JSON.stringify(g) !== JSON.stringify(a),
@@ -84,7 +84,7 @@ describe('결정론', () => {
 });
 
 describe('불변식 (랜덤/휴리스틱 봇 자기대전)', () => {
-  it('300판 동안 값 범위와 종료 조건이 유지된다', () => {
+  it('300판 동안 값 범위와 종료 조건이 유지된다', async () => {
     const kinds = ['random', 'greedy', 'rusher', 'builder', 'brawler'];
     for (let g = 0; g < 300; g++) {
       const players = 1 + (g % 6);
@@ -92,7 +92,7 @@ describe('불변식 (랜덤/휴리스틱 봇 자기대전)', () => {
       const end = Math.min(10, start + 1 + (g % 6));
       const game = new Game(cfg({ seed: g + 1000, players, startZone: start, endZone: end, difficulty: (['easy', 'normal', 'hard', 'extreme'] as const)[g % 4]! }));
       const ctrls = Array.from({ length: players }, (_, i) => createBot(kinds[(g + i) % kinds.length]!, g * 10 + i));
-      const res = game.run(ctrls);
+      const res = await game.run(ctrls);
       const s = game.state;
       expect(s.finished).toBe(true);
       expect(res.metrics.safetyStop ?? 0).toBe(0);
@@ -122,12 +122,12 @@ describe('불변식 (랜덤/휴리스틱 봇 자기대전)', () => {
 });
 
 describe('주사위와 기회 포인트', () => {
-  it('안 쓴 주사위가 4 이상이면 CP+1, 더블이면 +1 더', () => {
+  it('안 쓴 주사위가 4 이상이면 CP+1, 더블이면 +1 더', async () => {
     let checked = 0;
     for (let seed = 1; seed <= 60; seed++) {
       const game = new Game(cfg({ seed, players: 1, startZone: 1, endZone: 3 }));
       const c = new SafeCtrl();
-      game.playRound([c]);
+      await game.playRound([c]);
       const [a, b] = c.lastDice!;
       const left = a >= b ? b : a;
       const expected = (left >= 4 ? 1 : 0) + (a === b ? 1 : 0);
@@ -141,7 +141,7 @@ describe('주사위와 기회 포인트', () => {
 });
 
 describe('점수', () => {
-  it('달성률은 100%로 제한되고 초과분은 동점 처리에만 쓰인다', () => {
+  it('달성률은 100%로 제한되고 초과분은 동점 처리에만 쓰인다', async () => {
     const game = new Game(cfg({ players: 2, difficulty: 'easy', startZone: 1, endZone: 3 }));
     const goal = game.state.goals[0]!;
     if (goal.kind !== 'stat') throw new Error('easy 목표는 스탯형');
@@ -153,7 +153,7 @@ describe('점수', () => {
     expect(sc.overflow).toBe(goal.target * 2);
     expect(sc.penalty).toBe(DEFAULT_TUNING.notArrivedPenalty); // 아직 미도착
   });
-  it('동점이면 초과 달성이 큰 쪽이 이긴다', () => {
+  it('동점이면 초과 달성이 큰 쪽이 이긴다', async () => {
     const game = new Game(cfg({ players: 2, difficulty: 'easy', startZone: 1, endZone: 3 }));
     const goal = game.state.goals[0]!;
     if (goal.kind !== 'stat') throw new Error();
@@ -167,7 +167,7 @@ describe('점수', () => {
 });
 
 describe('마감 카운트다운', () => {
-  it('첫 도착 후 정해진 라운드 안에 판이 끝난다', () => {
+  it('첫 도착 후 정해진 라운드 안에 판이 끝난다', async () => {
     class Rush extends SafeCtrl {
       override choosePath() { return 1; }
     }
@@ -175,7 +175,7 @@ describe('마감 카운트다운', () => {
       const players = 3;
       const config = cfg({ seed, players, startZone: 1, endZone: 10 });
       const game = new Game(config);
-      const res = game.run([new Rush(), new SafeCtrl(), new SafeCtrl()]);
+      const res = await game.run([new Rush(), new SafeCtrl(), new SafeCtrl()]);
       const arrivals = game.state.players.filter((p) => p.arrived).map((p) => p.arrivalRound);
       expect(arrivals.length).toBeGreaterThan(0);
       const first = Math.min(...arrivals);
@@ -187,7 +187,7 @@ describe('마감 카운트다운', () => {
 });
 
 describe('팀전', () => {
-  it('팀원은 방해 대상에 나오지 않는다', () => {
+  it('팀원은 방해 대상에 나오지 않는다', async () => {
     const teams = [0, 1, 0, 1];
     for (let seed = 1; seed <= 30; seed++) {
       const game = new Game(cfg({ seed, players: 4, teams }));
@@ -200,22 +200,22 @@ describe('팀전', () => {
         };
         return b;
       });
-      const res = game.run(ctrls);
+      const res = await game.run(ctrls);
       expect(res.teamScores).toHaveLength(2);
       expect([0, 1]).toContain(res.winningTeam);
     }
   });
-  it('teams 길이가 맞지 않으면 에러', () => {
+  it('teams 길이가 맞지 않으면 에러', async () => {
     expect(() => new Game(cfg({ players: 4, teams: [0, 1] }))).toThrow();
   });
 });
 
 describe('설정 검증', () => {
-  it('플레이어 수는 1~6', () => {
+  it('플레이어 수는 1~6', async () => {
     expect(() => new Game(cfg({ players: 0 }))).toThrow();
     expect(() => new Game(cfg({ players: 7 }))).toThrow();
   });
-  it('난이도별 목표 개수', () => {
+  it('난이도별 목표 개수', async () => {
     const n = (d: 'easy' | 'normal' | 'hard' | 'extreme') => new Game(cfg({ difficulty: d })).state.goals.length;
     expect([n('easy'), n('normal'), n('hard'), n('extreme')]).toEqual([1, 2, 3, 5]);
   });
