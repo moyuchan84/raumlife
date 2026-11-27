@@ -1,3 +1,4 @@
+import type { Mood } from '../engine';
 import { ACCESSORIES, BOTTOM_COLORS, HAIR_COLORS, OUTFIT_COLORS, SKIN_TONES, ageLook, grayHair, type AgeLook, type Avatar } from '../shared/avatar';
 
 function shade(hex: string, k: number): string {
@@ -7,7 +8,117 @@ function shade(hex: string, k: number): string {
 }
 
 /** 얼굴 표정 (눈·볼터치·입). cx,cy = 머리 중심, r = 머리 반지름 */
-export function drawFace(ctx: CanvasRenderingContext2D, face: number, cx: number, cy: number, r: number, eyeScale = 1) {
+/** 상황에 따른 표정(기분). 얼굴 기본 표정 위에 덮어 그린다 */
+function drawMood(ctx: CanvasRenderingContext2D, mood: Mood, cx: number, cy: number, r: number, eyeScale: number) {
+  ctx.save();
+  ctx.fillStyle = '#2a1d17';
+  ctx.strokeStyle = '#2a1d17';
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(1.6, r * 0.07);
+  const ex = r * 0.36;
+  const ey = cy + r * 0.02;
+  const er = r * 0.1 * eyeScale;
+  const eye = (x: number, ry = 1.25) => {
+    ctx.beginPath();
+    ctx.ellipse(x, ey, er, er * ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  const cheek = (col: string, a = 0.6) => {
+    ctx.fillStyle = col;
+    ctx.globalAlpha = a;
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + sx * r * 0.55, cy + r * 0.22, r * 0.17, r * 0.11, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#2a1d17';
+  };
+  switch (mood) {
+    case 'happy':
+      cheek('#ff9aa8');
+      for (const sx of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(cx + sx * ex, ey + er * 0.6, er * 1.3, Math.PI * 1.1, Math.PI * 1.9);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy + r * 0.22, r * 0.24, Math.PI * 0.1, Math.PI * 0.9);
+      ctx.stroke();
+      break;
+    case 'sad':
+      cheek('#9ec3ff', 0.4);
+      for (const sx of [-1, 1]) {
+        eye(cx + sx * ex);
+        ctx.beginPath(); // 처진 눈썹
+        ctx.moveTo(cx + sx * ex - er * 1.4, ey - er * (sx > 0 ? 2.6 : 1.6));
+        ctx.lineTo(cx + sx * ex + er * 1.4, ey - er * (sx > 0 ? 1.6 : 2.6));
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy + r * 0.52, r * 0.16, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+      ctx.fillStyle = '#7cc4ff'; // 눈물
+      ctx.beginPath();
+      ctx.ellipse(cx + ex * 1.15, ey + er * 3.2, er * 0.7, er * 1.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'sick':
+      cheek('#ff6b6b', 0.55);
+      for (const sx of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + sx * ex - er * 1.3, ey + er * 0.4);
+        ctx.lineTo(cx + sx * ex + er * 1.3, ey + er * 0.4);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx + sx * ex, ey + er * 0.6, er * 0.7, 0, Math.PI);
+        ctx.fill();
+      }
+      ctx.beginPath(); // 물결 입
+      ctx.moveTo(cx - r * 0.2, cy + r * 0.4);
+      ctx.quadraticCurveTo(cx - r * 0.1, cy + r * 0.3, cx, cy + r * 0.4);
+      ctx.quadraticCurveTo(cx + r * 0.1, cy + r * 0.5, cx + r * 0.2, cy + r * 0.4);
+      ctx.stroke();
+      break;
+    case 'tired':
+      ctx.fillStyle = 'rgba(120,90,140,.35)';
+      for (const sx of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(cx + sx * ex, ey + er * 1.8, er * 1.6, er * 0.7, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#2a1d17';
+      for (const sx of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + sx * ex - er * 1.4, ey);
+        ctx.lineTo(cx + sx * ex + er * 1.4, ey);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx + sx * ex, ey + er * 0.2, er * 0.8, 0, Math.PI);
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.14, cy + r * 0.4);
+      ctx.lineTo(cx + r * 0.14, cy + r * 0.4);
+      ctx.stroke();
+      break;
+    case 'surprised':
+      cheek('#ff9aa8', 0.5);
+      eye(cx - ex, 1.5);
+      eye(cx + ex, 1.5);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + r * 0.42, r * 0.1, r * 0.14, 0, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+  }
+  ctx.restore();
+}
+
+export function drawFace(ctx: CanvasRenderingContext2D, face: number, cx: number, cy: number, r: number, eyeScale = 1, mood?: Mood) {
+  if (mood && mood !== 'neutral') {
+    drawMood(ctx, mood, cx, cy, r, eyeScale);
+    return;
+  }
   ctx.save();
   ctx.fillStyle = '#ff9aa8';
   ctx.globalAlpha = 0.55;
@@ -283,7 +394,7 @@ function wrinkles(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: numb
 }
 
 /** 상반신 캐릭터를 그린다. (cx, cy) = 머리 중심, r = 머리 반지름, stage = 나이 단계(1~10) */
-export function drawAvatar(ctx: CanvasRenderingContext2D, a: Avatar, cx: number, cy: number, r: number, stage = 5) {
+export function drawAvatar(ctx: CanvasRenderingContext2D, a: Avatar, cx: number, cy: number, r: number, stage = 5, mood?: Mood) {
   const look = ageLook(stage);
   ctx.save();
   // 어릴수록 머리가 크고 몸이 작아 보이게, 노년은 약간 앞으로 숙인다
@@ -304,7 +415,7 @@ export function drawAvatar(ctx: CanvasRenderingContext2D, a: Avatar, cx: number,
     ctx.arc(cx + sx * hr * 0.98, cyy + hr * 0.12, hr * 0.17, 0, Math.PI * 2);
     ctx.fill();
   }
-  drawFace(ctx, a.face, cx, cyy, hr, look.eye);
+  drawFace(ctx, a.face, cx, cyy, hr, look.eye, mood);
   wrinkles(ctx, cx, cyy, hr, look.wrinkles);
   hairFront(ctx, a, cx, cyy, hr, look);
   accessory(ctx, a, cx, cyy, hr);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Game, JOBS, MILESTONES, jobOffer, pensionOf, salaryOf, CARDS, ACTIVITY_CARDS, TROUBLE_CARDS, buildBoard, emptyLife, meets, startLife, staminaCapFor, DEFAULT_TUNING, generateGoals, Rng } from '../src/engine';
-import type { Controller, GameConfig, GameEvent, GameState, JourneyCard, MilestoneChoice } from '../src/engine';
+import type { Controller, GameConfig, GameEvent, GameState, JourneyCard, MilestoneChoice, OptionState } from '../src/engine';
 import { createBot } from '../src/ai/bots';
 import { ageLook, grayHair } from '../src/shared/avatar';
 
@@ -53,7 +53,7 @@ describe('인생 상태를 반영한 진행', () => {
     const bot = createBot(kind, seed);
     return new Proxy(bot, {
       get(t, k, r) {
-        if (k === 'chooseCardOption') return (s: GameState, me: number, c: JourneyCard, canSafe: boolean) => (checks.card(s, me, c), t.chooseCardOption(s, me, c, canSafe));
+        if (k === 'chooseCardOption') return (s: GameState, me: number, c: JourneyCard, states: OptionState[]) => (checks.card(s, me, c), t.chooseCardOption(s, me, c, states));
         if (k === 'chooseMilestone') return (s: GameState, me: number, z: number, title: string, o: MilestoneChoice[]) => (checks.ms(s, me, o), t.chooseMilestone(s, me, z, title, o));
         return Reflect.get(t, k, r);
       },
@@ -194,7 +194,10 @@ class SafeCtrl implements Controller {
   name = 'safe';
   chooseDie(_s: GameState, _me: number, dice: [number, number]): 0 | 1 { return dice[0] >= dice[1] ? 0 : 1; }
   choosePath(): number { return 0; }
-  chooseCardOption(_s: GameState, _me: number, _c: JourneyCard, canSafe: boolean) { return canSafe ? ('safe' as const) : ('challenge' as const); }
+  chooseCardOption(_s: GameState, _me: number, c: JourneyCard, states: OptionState[]): number {
+    const safe = c.options.findIndex((o, i) => states[i]!.enabled && !o.roll);
+    return safe >= 0 ? safe : states.findIndex((st) => st.enabled);
+  }
   chooseCpBoost(): number { return 0; }
   wantReroll(): boolean { return false; }
   choosePathOption(_s: GameState, _me: number, _z: number, a: boolean[]): number { return a.findIndex(Boolean); }

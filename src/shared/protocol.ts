@@ -1,4 +1,4 @@
-import type { CardDeck, Difficulty, Effect, HouseOffer, GameEvent, GameResult, JourneyCard, JobChoice, LifeState, MilestoneChoice, StatKey, Tile } from '../engine';
+import type { CardDeck, Difficulty, Effect, HouseOffer, GameEvent, GameResult, JourneyCard, JobChoice, LifeState, MilestoneChoice, OptionState, StatKey, Tile } from '../engine';
 import type { Avatar } from './avatar';
 
 export const BOT_KINDS = [
@@ -93,9 +93,9 @@ export interface StartedInfo {
 export type Ask =
   | { kind: 'die'; dice: [number, number]; bonus: number; cp: number; maxCp: number }
   | { kind: 'path'; options: { tileId: number; route: 'long' | 'short' | null; distance: number }[]; stamina: number }
-  | { kind: 'card'; deck: CardDeck; card: JourneyCard; canSafe: boolean; stamina: number; cp: number }
-  | { kind: 'boost'; card: JourneyCard; cp: number }
-  | { kind: 'reroll'; card: JourneyCard; roll: number; cost: number }
+  | { kind: 'card'; deck: CardDeck; card: JourneyCard; states: OptionState[]; stamina: number; cp: number; risky: boolean }
+  | { kind: 'boost'; card: JourneyCard; option: number; cp: number; bonus: number }
+  | { kind: 'reroll'; card: JourneyCard; option: number; roll: number; cost: number }
   | { kind: 'pathOption'; zone: number; names: string[]; effects: Effect[]; available: boolean[] }
   | { kind: 'job'; options: JobChoice[]; growth: number }
   | { kind: 'house'; offer: HouseOffer; onlyHome: boolean }

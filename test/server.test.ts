@@ -79,7 +79,7 @@ function answerFor(ask: Extract<ServerMsg, { t: 'ask' }>['ask']): unknown {
   switch (ask.kind) {
     case 'die': return ask.dice[0] >= ask.dice[1] ? 0 : 1;
     case 'path': return 0;
-    case 'card': return ask.canSafe ? 'safe' : 'challenge';
+    case 'card': return ask.card.options.findIndex((o, i) => ask.states[i]!.enabled && !o.roll) >= 0 ? ask.card.options.findIndex((o, i) => ask.states[i]!.enabled && !o.roll) : ask.states.findIndex((st) => st.enabled);
     case 'boost': return 0;
     case 'reroll': return false;
     case 'pathOption': return ask.available.findIndex(Boolean);

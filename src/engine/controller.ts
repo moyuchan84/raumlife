@@ -1,6 +1,13 @@
 import type { Effect, GameState, JourneyCard } from './types';
 import type { HouseAnswer, HouseOffer } from './data/houses';
 
+/** 카드 선택지의 현재 상태: 조건·비용을 못 맞추면 enabled=false, 주사위 보너스(스탯) */
+export interface OptionState {
+  enabled: boolean;
+  why: string;
+  bonus: number;
+}
+
 /** 직업 선택지 (학력(성장)이 모자라면 enabled=false) */
 export interface JobChoice {
   id: string;
@@ -36,12 +43,12 @@ export interface Controller {
   chooseDie(s: GameState, me: number, dice: [number, number]): Maybe<0 | 1>;
   /** 갈림길: options[0] = 둘레길, options[1] = 지름길. 선택한 인덱스를 반환 */
   choosePath(s: GameState, me: number, options: number[]): Maybe<number>;
-  /** 여정 카드: 안전 / 도전 (canSafe=false 이면 도전만 가능) */
-  chooseCardOption(s: GameState, me: number, card: JourneyCard, canSafe: boolean): Maybe<'safe' | 'challenge'>;
-  /** 도전 판정 전에 CP 를 몇 개 쓸지 (0..2) */
-  chooseCpBoost(s: GameState, me: number, card: JourneyCard): Maybe<number>;
-  /** 도전에 실패했을 때 CP 로 다시 굴릴지 */
-  wantReroll(s: GameState, me: number, card: JourneyCard, roll: number): Maybe<boolean>;
+  /** 카드: 대응 방식 하나를 고른다 (enabled 인 것만 가능). 지름길에서는 주사위 선택지만 가능 */
+  chooseCardOption(s: GameState, me: number, card: JourneyCard, states: OptionState[]): Maybe<number>;
+  /** 주사위를 굴리기 전에 CP 를 몇 개 쓸지 (0..2) */
+  chooseCpBoost(s: GameState, me: number, card: JourneyCard, option: number): Maybe<number>;
+  /** 실패했을 때 CP 로 다시 굴릴지 */
+  wantReroll(s: GameState, me: number, card: JourneyCard, option: number, roll: number): Maybe<boolean>;
   /** 진로 칸: 선택지 인덱스 (자리가 없으면 available[i]=false). -1 이면 선택 안 함 */
   choosePathOption(s: GameState, me: number, zone: number, available: boolean[]): Maybe<number>;
   /** 집을 사거나 직접 짓는다(또는 별장). null 이면 사지 않는다 */

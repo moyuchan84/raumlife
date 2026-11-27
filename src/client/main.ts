@@ -19,6 +19,7 @@ import { avatarImage } from './avatar2d';
 import { createCreator } from './creator';
 import { createBoard3D, type Board3D } from './board3d';
 import { buildHouseAsk } from './house';
+import { sceneCanvas } from './scene2d';
 
 // ───────── 앱 상태 ─────────
 const store = {
@@ -720,15 +721,20 @@ function onEvent(e: GameEvent) {
       break;
     }
     case 'card': {
-      const verdict =
-        e.choice === 'safe'
-          ? DECK_TEXT[e.deck].safe
-          : e.success
-            ? `도전 성공! (주사위 ${e.roll}${e.boost ? ` +✨${e.boost}` : ''}${e.rerolled ? ', 재굴림' : ''})`
-            : `도전 실패… (주사위 ${e.roll}${e.boost ? ` +✨${e.boost}` : ''}${e.rerolled ? ', 재굴림' : ''})`;
-      const eff = e.choice === 'safe' ? e.card.safe : e.success ? e.card.challenge.win : e.card.challenge.lose;
-      toast([h('h4', null, `${DECK_TEXT[e.deck].icon} ${who(e.player)} · ${e.card.title}`), h('div', null, verdict), h('div', { class: 'fx' }, fmtEffect(eff))], e.choice === 'safe' ? '' : e.success ? 'good' : 'bad', 2600);
-      addLog(`${who(e.player)} 「${e.card.title}」 ${verdict}`, e.player === S.state.me);
+      const opt = e.card.options[e.option]!;
+      const how = e.roll === null ? '' : e.success ? `주사위 ${e.roll}${e.bonus ? ` +${e.bonus}(실력)` : ''}${e.boost ? ` +✨${e.boost}` : ''}${e.rerolled ? ' (재굴림)' : ''} → 성공!` : `주사위 ${e.roll}${e.bonus ? ` +${e.bonus}(실력)` : ''}${e.boost ? ` +✨${e.boost}` : ''}${e.rerolled ? ' (재굴림)' : ''} → 아쉽게 실패`;
+      const net = (['asset', 'happy', 'network', 'growth', 'stamina'] as const).reduce((a, k) => a + (e.outcome.effect[k] ?? 0), 0);
+      const mood = net < 0 ? 'sad' : net > 0 ? 'happy' : 'neutral';
+      const pl = S.state.players[e.player];
+      const pic = pl ? sceneCanvas(e.card.scene, pl.avatar, e.card.zone, { mood, width: 240, height: 130 }) : null;
+      toast([
+        h('h4', null, `${DECK_TEXT[e.deck].icon} ${who(e.player)} · ${e.card.title}`),
+        ...(pic ? [pic] : []),
+        h('div', { class: 'muted' }, `선택: ${opt.label}${how ? ` · ${how}` : ''}`),
+        h('div', null, e.outcome.text),
+        h('div', { class: 'fx' }, fmtEffect(e.outcome.effect)),
+      ], e.success === false || net < 0 ? 'bad' : 'good', 3600);
+      addLog(`${who(e.player)} 「${e.card.title}」 ${opt.label} → ${e.outcome.text} ${fmtEffect(e.outcome.effect)}`, e.player === S.state.me);
       break;
     }
     case 'weather':
@@ -764,10 +770,20 @@ function onEvent(e: GameEvent) {
 
 // ───────── 결정 UI ─────────
 const DECK_TEXT = {
-  journey: { icon: '🃏', sub: '안전하게 갈까, 도전할까?', safe: '안전하게', challenge: '도전' },
-  activity: { icon: '🏄', sub: '액티비티! 참가하면 보상이 커요. 구경만 해도 조금 즐거워요.', safe: '구경만 한다', challenge: '참가한다' },
-  trouble: { icon: '⚠️', sub: '트러블 발생! 참고 넘기면 피해가 생기고, 맞서면 피할 수 있어요 (실패하면 더 아파요).', safe: '참고 넘긴다', challenge: '맞선다' },
+  journey: { icon: '📖', label: '일상', sub: '어떻게 할까요? 선택에 따라 얻는 것과 잃는 것이 달라요.' },
+  activity: { icon: '🏄', label: '액티비티', sub: '참가하면 보상이 커요. 인맥이 있으면 친구와 함께해 더 쉽게 할 수 있어요.' },
+  trouble: { icon: '⚠️', label: '트러블', sub: '이유가 있는 어려움이에요. 어떻게 대응하느냐에 따라 결과가 달라져요.' },
 } as const;
+
+/** 선택지를 치르는 값 "💪1 💰1 ✨1" */
+function fmtCost(c?: { stamina?: number; asset?: number; cp?: number }): string {
+  if (!c) return '';
+  const p: string[] = [];
+  if (c.stamina) p.push(`💪${c.stamina}`);
+  if (c.asset) p.push(`💰${c.asset}`);
+  if (c.cp) p.push(`✨${c.cp}`);
+  return p.join(' ');
+}
 
 function answer(value: unknown) {
   if (!S.ask) return;
@@ -812,23 +828,40 @@ function renderAsk() {
     }
     case 'card': {
       const c = a.card;
-      const ch = c.challenge;
       const L = DECK_TEXT[a.deck];
-      box.append(h('h4', null, `${L.icon} ${c.title}`), h('div', { class: 'sub' }, a.canSafe ? L.sub : `지름길이라 맞서야만 합니다. ${L.sub}`));
-      if (a.canSafe) opts.append(opt(L.safe, fmtEffect(c.safe), () => answer('safe'), false, a.deck !== 'trouble'));
-      opts.append(opt(`${L.challenge} (성공 ${pct(successProb(ch.dc))})`, `💪-${ch.staminaCost} · 성공 ${fmtEffect(ch.win)} / 실패 ${fmtEffect(ch.lose)}`, () => answer('challenge'), a.canSafe && a.stamina < ch.staminaCost, a.deck === 'trouble' || !a.canSafe));
+      const meP = S.state!.players[S.state!.me]!;
+      box.classList.add('wide', 'cardask');
+      const right = h('div', { class: 'cright' },
+        h('h4', null, `${L.icon} ${c.title}`),
+        h('div', { class: 'story' }, c.story),
+        h('div', { class: 'sub' }, a.risky ? '험한 지름길이라 맞서는 선택지(주사위)만 고를 수 있어요. 주사위가 한 단계 어렵고 체력이 더 들어요.' : L.sub),
+      );
+      c.options.forEach((o, i) => {
+        const st = a.states[i]!;
+        const cost = fmtCost(o.cost);
+        const gate = o.gate ? Object.entries(o.gate).map(([k, v]) => `${({ network: '인맥', growth: '성장', asset: '자산', happy: '행복' } as Record<string, string>)[k]} ${v}+`).join(' ') : '';
+        const result = o.roll
+          ? `🎲 성공 ${pct(successProb(o.roll.dc, st.bonus))}${st.bonus ? ` (실력 보너스 +${st.bonus})` : ''} → ${fmtEffect(o.win.effect)} / 실패 → ${fmtEffect(o.lose?.effect ?? {})}`
+          : `→ ${fmtEffect(o.win.effect)}`;
+        const sub = st.enabled ? `${cost ? `치르는 값 ${cost} · ` : ''}${gate ? `조건 ${gate} · ` : ''}${result}` : `🔒 ${st.why}`;
+        right.append(h('button', { class: `opt ${o.roll ? '' : 'primary'}`.trim(), disabled: !st.enabled, onclick: () => answer(i) }, h('b', null, o.label), h('small', null, sub)));
+      });
+      box.append(h('div', { class: 'cleft' }, sceneCanvas(c.scene, meP.avatar, c.zone), h('span', { class: 'badge' }, L.label)), right);
       break;
     }
     case 'boost': {
-      const ch = a.card.challenge;
-      box.append(h('h4', null, '✨ 기회 포인트를 쓸까?'), h('div', { class: 'sub' }, `「${a.card.title}」 도전: 주사위 ${ch.dc} 이상이면 성공. ✨ 1개당 +1 (최대 2개) · 보유 ✨${a.cp}`));
-      for (const n of [0, 1, 2]) opts.append(opt(n === 0 ? '쓰지 않음' : `✨ ${n}개 사용`, `성공 확률 ${pct(successProb(ch.dc, n))}`, () => answer(n), n > a.cp, n === 0));
+      const o = a.card.options[a.option]!;
+      const dc = o.roll!.dc;
+      box.append(h('h4', null, '✨ 기회 포인트를 쓸까?'), h('div', { class: 'sub' }, `「${o.label}」: 주사위 ${dc} 이상이면 성공${a.bonus ? ` (실력 보너스 +${a.bonus})` : ''}. ✨ 1개당 +1 (최대 2개) · 보유 ✨${a.cp}`));
+      for (const n of [0, 1, 2]) opts.append(opt(n === 0 ? '쓰지 않음' : `✨ ${n}개 사용`, `성공 확률 ${pct(successProb(dc, a.bonus + n))}`, () => answer(n), n > a.cp, n === 0));
       break;
     }
-    case 'reroll':
-      box.append(h('h4', null, `🎲 실패… (주사위 ${a.roll})`), h('div', { class: 'sub' }, `✨${a.cost}개를 내고 다시 굴릴까?`));
-      opts.append(opt(`✨${a.cost} 내고 다시 굴리기`, `성공 확률 ${pct(successProb(a.card.challenge.dc))}`, () => answer(true), false, true), opt('그대로 받아들이기', fmtEffect(a.card.challenge.lose), () => answer(false)));
+    case 'reroll': {
+      const o = a.card.options[a.option]!;
+      box.append(h('h4', null, `🎲 아쉽게 실패… (주사위 ${a.roll})`), h('div', { class: 'sub' }, `✨${a.cost}개를 내고 다시 굴릴까?`));
+      opts.append(opt(`✨${a.cost} 내고 다시 굴리기`, `성공 확률 ${pct(successProb(o.roll!.dc))}`, () => answer(true), false, true), opt('그대로 받아들이기', fmtEffect(o.lose?.effect ?? {}), () => answer(false)));
       break;
+    }
     case 'pathOption': {
       box.append(h('h4', null, `🪧 진로 선택 — ${ZONES[a.zone - 1]!.name}`), h('div', { class: 'sub' }, '자리가 한정되어 있어요. 먼저 고른 사람이 차지합니다.'));
       a.names.forEach((n, i) => opts.append(opt(n, `${fmtEffect(a.effects[i]!)}${a.available[i] ? '' : ' · 마감'}`, () => answer(i), !a.available[i], true)));

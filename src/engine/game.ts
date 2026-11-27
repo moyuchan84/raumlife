@@ -1,5 +1,6 @@
 import type {
   CardDeck,
+  CardOption,
   Effect,
   GameConfig,
   GameEvent,
@@ -22,7 +23,7 @@ import { WEATHER } from './data/weather';
 import { PATH_ARCHETYPES, ZONES } from './data/zones';
 import { MILESTONES, meets, reqText, staminaCapFor, startLife } from './data/life';
 import { hasAnythingToBuy, houseDividend, makeOffer, validAnswer, type HouseOffer } from './data/houses';
-import type { JobChoice, MilestoneChoice } from './controller';
+import type { JobChoice, MilestoneChoice, OptionState } from './controller';
 import { JOB_BY_ID, jobOffer, pensionOf, salaryOf } from './data/jobs';
 import { DEFAULT_TUNING } from './tuning';
 import { START_STATS, generateGoals, goalCompletion, goalOverflow } from './goals';
@@ -516,47 +517,95 @@ export class Game {
     await this.emit({ t: 'milestone', player: p.id, zone, option: opt.name, success, effect });
   }
 
+  /** 지름길은 험해서 주사위가 한 단계 어렵고 체력이 더 든다. 그래서 주사위 선택지만 가능하다 */
+  private harden(card: JourneyCard): JourneyCard {
+    return {
+      ...card,
+      options: card.options.map((opt) =>
+        opt.roll
+          ? { ...opt, roll: { ...opt.roll, dc: Math.min(6, opt.roll.dc + 1) }, cost: { ...opt.cost, stamina: (opt.cost?.stamina ?? 0) + 1 } }
+          : opt,
+      ),
+    };
+  }
+
+  /** 해당 스탯 6마다 주사위 +1 (최대 +2): 준비된 사람이 기회를 잡는다 */
+  rollBonus(p: PlayerState, stat?: StatKey): number {
+    return stat ? Math.min(2, Math.floor(p.stats[stat] / 6)) : 0;
+  }
+
+  /** 선택지의 조건·비용을 이 플레이어가 맞출 수 있는지 */
+  optionState(p: PlayerState, opt: CardOption, risky: boolean): OptionState {
+    const bonus = this.rollBonus(p, opt.roll?.stat);
+    const names = { network: '인맥', growth: '성장', asset: '자산', happy: '행복' } as const;
+    if (risky && !opt.roll) return { enabled: false, why: '험한 지름길에서는 맞서야 해요', bonus };
+    for (const k of ['network', 'growth', 'asset', 'happy'] as const) {
+      const need = opt.gate?.[k];
+      if (need !== undefined && p.stats[k] < need) return { enabled: false, why: `${names[k]} ${need} 이상 필요 (지금 ${p.stats[k]})`, bonus };
+    }
+    const c = opt.cost;
+    if (c?.stamina && p.stamina < c.stamina) return { enabled: false, why: `체력 ${c.stamina} 필요 (지금 ${p.stamina})`, bonus };
+    if (c?.asset && p.stats.asset < c.asset) return { enabled: false, why: `💰${c.asset} 필요 (지금 ${p.stats.asset})`, bonus };
+    if (c?.cp && p.cp < c.cp) return { enabled: false, why: `✨${c.cp} 필요`, bonus };
+    return { enabled: true, why: '', bonus };
+  }
+
   private async resolveJourney(p: PlayerState, ctrl: Controller, tile: Tile): Promise<void> {
     const s = this.state;
     const deck = tile.type as CardDeck;
     const drawn = this.drawCard(deck, tile.zone, p);
-    // 지름길은 험해서 판정이 한 단계 어렵다
-    const card: JourneyCard = tile.risky ? { ...drawn, challenge: { ...drawn.challenge, dc: Math.min(6, drawn.challenge.dc + 1), staminaCost: drawn.challenge.staminaCost + 1 } } : drawn;
-    const cost = card.challenge.staminaCost;
-    const canSafe = !tile.risky;
-    let choice: 'safe' | 'challenge' = await ctrl.chooseCardOption(s, p.id, card, canSafe);
-    if (!canSafe) choice = 'challenge';
-    else if (choice === 'challenge' && p.stamina < cost) choice = 'safe';
+    const risky = !!tile.risky;
+    const card = risky ? this.harden(drawn) : drawn;
+    const states = card.options.map((o) => this.optionState(p, o, risky));
+    let pick = await ctrl.chooseCardOption(s, p.id, card, states);
+    if (!Number.isInteger(pick) || pick < 0 || pick >= card.options.length || !states[pick]!.enabled) {
+      pick = states.findIndex((st) => st.enabled);
+      if (pick < 0) pick = card.options.findIndex((o) => o.roll) >= 0 ? card.options.findIndex((o) => o.roll) : 0; // 아무것도 못 고르면 가장 가까운 것
+    }
+    const opt = card.options[pick]!;
+    // 값을 치른다 (모자라면 있는 만큼만)
+    const c = opt.cost;
+    if (c) {
+      this.applyEffect(p, {
+        stamina: -Math.min(c.stamina ?? 0, p.stamina),
+        asset: -Math.min(c.asset ?? 0, p.stats.asset),
+        cp: -Math.min(c.cp ?? 0, p.cp),
+      });
+    }
 
-    if (choice === 'safe') {
-      this.applyEffect(p, card.safe);
-      this.m('safeChosen');
-      await this.emit({ t: 'card', player: p.id, deck, card, choice, boost: 0, roll: null, success: null, rerolled: false });
-      return;
-    }
-    this.m('challengeTried');
-    p.track.challengesTried++;
-    this.applyEffect(p, { stamina: -Math.min(cost, p.stamina) });
-    const boost = clamp(await ctrl.chooseCpBoost(s, p.id, card), 0, Math.min(2, p.cp));
-    if (boost) this.applyEffect(p, { cp: -boost });
-    let roll = this.rng.die();
-    let ok = roll + boost >= card.challenge.dc;
+    let outcome = opt.win;
+    let roll: number | null = null;
+    let success: boolean | null = null;
+    let boost = 0;
     let rerolled = false;
-    if (!ok && p.cp >= s.tuning.rerollCost && (await ctrl.wantReroll(s, p.id, card, roll))) {
-      rerolled = true;
-      this.applyEffect(p, { cp: -s.tuning.rerollCost });
+    const bonus = this.rollBonus(p, opt.roll?.stat);
+    if (opt.roll) {
+      this.m('challengeTried');
+      p.track.challengesTried++;
+      boost = clamp(await ctrl.chooseCpBoost(s, p.id, card, pick), 0, Math.min(2, p.cp));
+      if (boost) this.applyEffect(p, { cp: -boost });
       roll = this.rng.die();
-      ok = roll + boost >= card.challenge.dc;
-      this.m('rerolls');
-    }
-    if (ok) {
-      p.track.challengesWon++;
-      this.m('challengeWon');
-      this.applyEffect(p, card.challenge.win);
+      let ok = roll + boost + bonus >= opt.roll.dc;
+      if (!ok && p.cp >= s.tuning.rerollCost && (await ctrl.wantReroll(s, p.id, card, pick, roll))) {
+        rerolled = true;
+        this.applyEffect(p, { cp: -s.tuning.rerollCost });
+        roll = this.rng.die();
+        ok = roll + boost + bonus >= opt.roll.dc;
+        this.m('rerolls');
+      }
+      success = ok;
+      if (ok) {
+        p.track.challengesWon++;
+        this.m('challengeWon');
+        outcome = opt.win;
+      } else {
+        outcome = opt.lose ?? { text: '잘 풀리지 않았어요.', effect: {} };
+      }
     } else {
-      this.applyEffect(p, card.challenge.lose);
+      this.m('safeChosen');
     }
-    await this.emit({ t: 'card', player: p.id, deck, card, choice, boost, roll, success: ok, rerolled });
+    this.applyEffect(p, outcome.effect);
+    await this.emit({ t: 'card', player: p.id, deck, card, option: pick, boost, bonus, roll, success, rerolled, outcome });
   }
 
   private async resolvePath(p: PlayerState, ctrl: Controller, zone: number): Promise<void> {

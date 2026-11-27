@@ -1,4 +1,4 @@
-import type { Controller, GameState, HouseAnswer, HouseOffer, JobChoice, JourneyCard, MilestoneChoice } from '../engine';
+import type { Controller, GameState, HouseAnswer, HouseOffer, JobChoice, JourneyCard, MilestoneChoice, OptionState } from '../engine';
 import { LODGE_COST, LODGE_EFFECT, PATH_ARCHETYPES, ZONES, distancesToSummit } from '../engine';
 import type { Ask } from '../shared/protocol';
 import type { Room } from './room';
@@ -42,29 +42,32 @@ export class HumanController implements Controller {
     return r === FALLBACK ? this.fallback.choosePath(s, me, options) : r;
   }
 
-  async chooseCardOption(s: GameState, me: number, card: JourneyCard, canSafe: boolean): Promise<'safe' | 'challenge'> {
+  async chooseCardOption(s: GameState, me: number, card: JourneyCard, states: OptionState[]): Promise<number> {
     const p = s.players[me]!;
+    const tile = s.board.tiles[p.pos]!;
     const r = await this.ask(
-      { kind: 'card', deck: s.board.tiles[p.pos]!.type as 'journey' | 'activity' | 'trouble', card, canSafe, stamina: p.stamina, cp: p.cp },
-      (v) => (v === 'safe' || v === 'challenge' ? v : FALLBACK),
+      { kind: 'card', deck: tile.type as 'journey' | 'activity' | 'trouble', card, states, stamina: p.stamina, cp: p.cp, risky: !!tile.risky },
+      (v) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < card.options.length && states[v]!.enabled ? v : FALLBACK),
     );
-    return r === FALLBACK ? this.fallback.chooseCardOption(s, me, card, canSafe) : r;
+    return r === FALLBACK ? this.fallback.chooseCardOption(s, me, card, states) : r;
   }
 
-  async chooseCpBoost(s: GameState, me: number, card: JourneyCard): Promise<number> {
-    const cp = s.players[me]!.cp;
-    if (cp <= 0) return 0; // 쓸 CP 가 없으면 묻지 않는다
-    const r = await this.ask({ kind: 'boost', card, cp }, (v) =>
+  async chooseCpBoost(s: GameState, me: number, card: JourneyCard, option: number): Promise<number> {
+    const p = s.players[me]!;
+    if (p.cp <= 0 || !card.options[option]?.roll) return 0; // 쓸 CP 가 없으면 묻지 않는다
+    const stat = card.options[option]!.roll!.stat;
+    const bonus = Math.min(2, Math.floor((stat ? p.stats[stat] : 0) / 6));
+    const r = await this.ask({ kind: 'boost', card, option, cp: p.cp, bonus }, (v) =>
       typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 2 ? v : FALLBACK,
     );
-    return r === FALLBACK ? this.fallback.chooseCpBoost(s, me, card) : r;
+    return r === FALLBACK ? this.fallback.chooseCpBoost(s, me, card, option) : r;
   }
 
-  async wantReroll(s: GameState, me: number, card: JourneyCard, roll: number): Promise<boolean> {
-    const r = await this.ask({ kind: 'reroll', card, roll, cost: s.tuning.rerollCost }, (v) =>
+  async wantReroll(s: GameState, me: number, card: JourneyCard, option: number, roll: number): Promise<boolean> {
+    const r = await this.ask({ kind: 'reroll', card, option, roll, cost: s.tuning.rerollCost }, (v) =>
       typeof v === 'boolean' ? v : FALLBACK,
     );
-    return r === FALLBACK ? this.fallback.wantReroll(s, me, card, roll) : r;
+    return r === FALLBACK ? this.fallback.wantReroll(s, me, card, option, roll) : r;
   }
 
   async choosePathOption(s: GameState, me: number, zone: number, available: boolean[]): Promise<number> {

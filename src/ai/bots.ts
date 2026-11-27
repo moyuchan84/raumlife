@@ -1,4 +1,4 @@
-import type { Board, Controller, Effect, GameState, HouseAnswer, HouseOffer, JobChoice, JourneyCard, MilestoneChoice, PlayerState } from '../engine';
+import type { Board, CardOption, Controller, Effect, GameState, HouseAnswer, HouseOffer, JobChoice, JourneyCard, MilestoneChoice, OptionState, PlayerState } from '../engine';
 import { BUILD_EXTRAS, BUILD_SIZES, HOUSE_STYLES, VILLAS, validAnswer, distancesToSummit, LODGE_COST, LODGE_EFFECT, PATH_ARCHETYPES, Rng, STAT_KEYS, goalCompletion } from '../engine';
 
 // ───────── 평가 함수 ─────────
@@ -118,43 +118,62 @@ export class HeuristicBot implements Controller {
     }
   }
 
-  private successProb(card: JourneyCard, boost = 0): number {
-    return clamp((7 - (card.challenge.dc - boost)) / 6, 0, 1);
+  private successProb(dc: number, bonus = 0): number {
+    return clamp((7 - (dc - bonus)) / 6, 0, 1);
   }
 
-  chooseCardOption(s: GameState, me: number, card: JourneyCard, canSafe: boolean): 'safe' | 'challenge' {
-    if (!canSafe) return 'challenge';
+  /** 선택지를 골랐을 때의 기대 가치 (비용 포함) */
+  private optionValue(s: GameState, me: number, opt: CardOption, bonus: number): number {
     const p = s.players[me]!;
-    if (p.stamina < card.challenge.staminaCost) return 'safe';
-    const safe = valueAfter(s, me, card.safe);
-    const pr = this.successProb(card);
-    const cost = { stamina: -card.challenge.staminaCost };
-    const win = valueAfter(s, me, mergeEffects(cost, card.challenge.win));
-    const lose = valueAfter(s, me, mergeEffects(cost, card.challenge.lose));
-    const ev = pr * win + (1 - pr) * lose;
-    // 도전 성공 횟수 목표가 있으면 도전을 더 선호
-    const risk = this.style.risk * (this.hasCond(s, 'challengesWon') ? 1.3 : 1);
-    return ev * risk > safe ? 'challenge' : 'safe';
+    const cost: Effect = {};
+    if (opt.cost?.stamina) cost.stamina = -Math.min(opt.cost.stamina, p.stamina);
+    if (opt.cost?.asset) cost.asset = -opt.cost.asset;
+    if (opt.cost?.cp) cost.cp = -opt.cost.cp;
+    const win = valueAfter(s, me, mergeEffects(cost, opt.win.effect));
+    if (!opt.roll) return win;
+    const lose = valueAfter(s, me, mergeEffects(cost, opt.lose?.effect ?? {}));
+    const pr = this.successProb(opt.roll.dc, bonus);
+    return pr * win + (1 - pr) * lose + (this.style.risk - 1) * 3 + (this.hasCond(s, 'challengesWon') ? 3 * pr : 0);
   }
 
-  chooseCpBoost(s: GameState, me: number, card: JourneyCard): number {
+  chooseCardOption(s: GameState, me: number, card: JourneyCard, states: OptionState[]): number {
+    let best = -1;
+    let bestV = -Infinity;
+    card.options.forEach((opt, i) => {
+      if (!states[i]!.enabled) return;
+      const v = this.optionValue(s, me, opt, states[i]!.bonus);
+      if (v > bestV) {
+        bestV = v;
+        best = i;
+      }
+    });
+    return best;
+  }
+
+  chooseCpBoost(s: GameState, me: number, card: JourneyCard, option: number): number {
     const p = s.players[me]!;
-    const cost = { stamina: 0 };
-    const win = valueAfter(s, me, mergeEffects(cost, card.challenge.win));
-    const lose = valueAfter(s, me, mergeEffects(cost, card.challenge.lose));
+    const opt = card.options[option]!;
+    if (!opt.roll) return 0;
+    const bonus = Math.min(2, Math.floor((opt.roll.stat ? p.stats[opt.roll.stat] : 0) / 6));
+    const win = valueAfter(s, me, opt.win.effect);
+    const lose = valueAfter(s, me, opt.lose?.effect ?? {});
     let boost = 0;
     while (boost < 2 && boost < p.cp) {
-      const gain = (this.successProb(card, boost + 1) - this.successProb(card, boost)) * (win - lose);
+      const gain = (this.successProb(opt.roll.dc, bonus + boost + 1) - this.successProb(opt.roll.dc, bonus + boost)) * (win - lose);
       if (gain > CP_VALUE * 1.2) boost++;
       else break;
     }
     return boost;
   }
 
-  wantReroll(s: GameState, me: number, card: JourneyCard): boolean {
-    const win = valueAfter(s, me, card.challenge.win);
-    const lose = valueAfter(s, me, card.challenge.lose);
-    return this.successProb(card) * (win - lose) > s.tuning.rerollCost * CP_VALUE * 1.2;
+  wantReroll(s: GameState, me: number, card: JourneyCard, option: number): boolean {
+    const p = s.players[me]!;
+    const opt = card.options[option]!;
+    if (!opt.roll) return false;
+    const bonus = Math.min(2, Math.floor((opt.roll.stat ? p.stats[opt.roll.stat] : 0) / 6));
+    const win = valueAfter(s, me, opt.win.effect);
+    const lose = valueAfter(s, me, opt.lose?.effect ?? {});
+    return this.successProb(opt.roll.dc, bonus) * (win - lose) > s.tuning.rerollCost * CP_VALUE * 1.2;
   }
 
   choosePathOption(s: GameState, me: number, _zone: number, available: boolean[]): number {
@@ -272,8 +291,9 @@ export class RandomBot implements Controller {
   choosePath(_s: GameState, _me: number, options: number[]): number {
     return this.rng.int(options.length);
   }
-  chooseCardOption(_s: GameState, _me: number, _c: JourneyCard, canSafe: boolean): 'safe' | 'challenge' {
-    return !canSafe || this.rng.next() < 0.5 ? 'challenge' : 'safe';
+  chooseCardOption(_s: GameState, _me: number, _c: JourneyCard, states: OptionState[]): number {
+    const idx = states.map((st, i) => (st.enabled ? i : -1)).filter((i) => i >= 0);
+    return idx.length ? idx[this.rng.int(idx.length)]! : -1;
   }
   chooseCpBoost(): number {
     return 0;

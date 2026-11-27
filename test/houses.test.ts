@@ -101,7 +101,10 @@ class Buyer implements Controller {
   constructor(private pick: (o: HouseOffer) => HouseAnswer | null) {}
   chooseDie(_s: GameState, _m: number, d: [number, number]): 0 | 1 { return d[0] >= d[1] ? 0 : 1; }
   choosePath(): number { return 0; }
-  chooseCardOption(_s: GameState, _m: number, _c: JourneyCard, canSafe: boolean) { return canSafe ? ('safe' as const) : ('challenge' as const); }
+  chooseCardOption(_s: GameState, _m: number, c: JourneyCard, states: { enabled: boolean }[]): number {
+    const safe = c.options.findIndex((o, i) => states[i]!.enabled && !o.roll);
+    return safe >= 0 ? safe : states.findIndex((st) => st.enabled);
+  }
   chooseCpBoost(): number { return 0; }
   wantReroll(): boolean { return false; }
   choosePathOption(_s: GameState, _m: number, _z: number, a: boolean[]): number { return a.findIndex(Boolean); }

@@ -101,11 +101,61 @@ export interface Board {
   summit: number;
 }
 
-export interface Challenge {
-  staminaCost: number;
-  dc: number; // d6 >= dc 이면 성공
-  win: Effect;
-  lose: Effect;
+/** 카드 그림(장면): 배경 + 소품(이모지) + 내 캐릭터의 표정 + 주변 사람 */
+export type SceneBg =
+  | 'home'
+  | 'night'
+  | 'school'
+  | 'playground'
+  | 'street'
+  | 'office'
+  | 'hospital'
+  | 'beach'
+  | 'park'
+  | 'kitchen'
+  | 'market'
+  | 'stage'
+  | 'campus'
+  | 'bank'
+  | 'mountain'
+  | 'farm';
+export type Mood = 'happy' | 'sad' | 'sick' | 'tired' | 'surprised' | 'neutral';
+export interface Scene {
+  bg: SceneBg;
+  /** 소품 이모지들 (공백 없이 이어 붙임) */
+  props: string;
+  mood: Mood;
+  /** 주변 사람 이모지들 */
+  others?: string;
+}
+
+/** 선택지를 고르려면 지금 이 정도는 있어야 한다 (최소 수치) */
+export interface Gate {
+  network?: number;
+  growth?: number;
+  asset?: number;
+  happy?: number;
+}
+/** 선택하면 먼저 치르는 값 (양수) */
+export interface Cost {
+  stamina?: number;
+  asset?: number;
+  cp?: number;
+}
+export interface Outcome {
+  /** 결과 이야기 */
+  text: string;
+  effect: Effect;
+}
+/** 카드 하나의 대응 방식. roll 이 있으면 주사위로 성공/실패가 갈린다 */
+export interface CardOption {
+  label: string;
+  cost?: Cost;
+  gate?: Gate;
+  /** d6 + 보너스(해당 스탯 6마다 +1, 최대 +2) + CP ≥ dc 이면 성공 */
+  roll?: { dc: number; stat?: StatKey };
+  win: Outcome;
+  lose?: Outcome;
 }
 export type CardDeck = 'journey' | 'activity' | 'trouble';
 
@@ -114,8 +164,10 @@ export interface JourneyCard {
   /** 0 이면 모든 구간 공통 */
   zone: number;
   title: string;
-  safe: Effect;
-  challenge: Challenge;
+  scene: Scene;
+  /** 상황과 (트러블이면) 현실적인 원인 */
+  story: string;
+  options: CardOption[];
   /** 이 조건을 만족하는 플레이어에게만 나오는 카드 */
   requires?: Req;
 }
@@ -271,7 +323,7 @@ export type GameEvent =
   | { t: 'house'; player: number; spec: HouseSpec; effect: Effect }
   | { t: 'milestone'; player: number; zone: number; option: string; success: boolean | null; effect: Effect }
   | { t: 'tile'; player: number; tile: number; tileType: TileType; delta: Effect }
-  | { t: 'card'; player: number; deck: CardDeck; card: JourneyCard; choice: 'safe' | 'challenge'; boost: number; roll: number | null; success: boolean | null; rerolled: boolean }
+  | { t: 'card'; player: number; deck: CardDeck; card: JourneyCard; option: number; boost: number; bonus: number; roll: number | null; success: boolean | null; rerolled: boolean; outcome: Outcome }
   | { t: 'weather'; player: number; card: WeatherCard }
   | { t: 'pathOption'; player: number; zone: number; option: number }
   | { t: 'lodge'; player: number }
