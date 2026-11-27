@@ -8,7 +8,28 @@ export const STAT_LABEL: Record<StatKey, string> = {
 };
 
 /** 인생 상태: 직업·동반자·자녀·집. 카드 조건과 인생 목표에 쓰인다. */
+/** 산 집/직접 지은 집/별장의 모습과 위치 */
+export interface HouseSpec {
+  kind: 'ready' | 'custom' | 'villa';
+  name: string;
+  /** 1 작은, 2 중간, 3 큰 */
+  size: 1 | 2 | 3;
+  /** 스타일(모양) 번호 */
+  style: number;
+  /** 색 번호 */
+  color: number;
+  extras: string[];
+  price: number;
+  /** 어느 칸(섬)에서 마련했는지 — 3D 월드에서 그 섬에 세워진다 */
+  tileId: number;
+  zone: number;
+}
+
 export interface LifeState {
+  /** 사는 집 (별장과 별개) */
+  house: HouseSpec | null;
+  /** 별장 (사는 집은 그대로 있다) */
+  villa: HouseSpec | null;
   /** 직업 이름 (화면 표시용) */
   career: string | null;
   /** 직업 종류 (월급 계산용). 성인이 되면 정하고, 섬을 옮길 때마다 월급을 받는다 */
@@ -57,6 +78,7 @@ export type TileType =
   | 'camp'
   | 'path'
   | 'lodge'
+  | 'estate' // 부동산: 집을 사거나 짓고, 돈이 많으면 별장도 산다
   | 'fork'
   | 'weather'
   | 'milestone'
@@ -130,6 +152,8 @@ export interface GameConfig {
   seed: number;
   /** 팀전: 길이=players, 같은 값이면 같은 팀. 없으면 개인전 */
   teams?: number[];
+  /** 여행 길이: 1 보통(약 150칸) / 2 길게(약 220칸) / 3 아주 길게(약 300칸) */
+  length?: 1 | 2 | 3;
   /** 튜닝 파라미터 일부 덮어쓰기 */
   tuning?: Partial<Tuning>;
 }
@@ -156,6 +180,8 @@ export interface Tuning {
   milestoneThresholdPerZone: number;
   /** 나이(구간)에 따른 체력 상한 (구간 1~10) */
   staminaCap: number[];
+  /** 여행 길이(1~3)별 스탯 목표 배율 */
+  lengthGain: number[];
   /** 한 판 시간 추정용 (초/턴) */
   secondsPerTurn: number;
   /** 고른 주사위 눈에 더해지는 이동 칸 수 (칸이 늘어난 만큼 보정) */
@@ -242,6 +268,7 @@ export type GameEvent =
   | { t: 'zoneEnter'; player: number; zone: number }
   | { t: 'payday'; player: number; zone: number; job: string; amount: number; pension: boolean; effect: Effect }
   | { t: 'job'; player: number; job: string; salary: number }
+  | { t: 'house'; player: number; spec: HouseSpec; effect: Effect }
   | { t: 'milestone'; player: number; zone: number; option: string; success: boolean | null; effect: Effect }
   | { t: 'tile'; player: number; tile: number; tileType: TileType; delta: Effect }
   | { t: 'card'; player: number; deck: CardDeck; card: JourneyCard; choice: 'safe' | 'challenge'; boost: number; roll: number | null; success: boolean | null; rerolled: boolean }

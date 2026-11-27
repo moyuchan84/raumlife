@@ -32,6 +32,7 @@ export const DEFAULT_SETTINGS: RoomSettings = {
   endZone: 10,
   difficulty: 'normal',
   teams: false,
+  length: 1,
   decisionSeconds: 40,
 };
 
@@ -134,6 +135,7 @@ export class Room {
     if (patch.endZone !== undefined) s.endZone = Math.round(Number(patch.endZone));
     if (patch.difficulty && ['easy', 'normal', 'hard', 'extreme'].includes(patch.difficulty)) s.difficulty = patch.difficulty;
     if (patch.teams !== undefined) s.teams = !!patch.teams;
+    if (patch.length === 1 || patch.length === 2 || patch.length === 3) s.length = patch.length;
     if (patch.decisionSeconds !== undefined) s.decisionSeconds = Math.max(10, Math.min(120, Math.round(Number(patch.decisionSeconds))));
     s.startZone = Math.max(1, Math.min(10, s.startZone));
     s.endZone = Math.max(1, Math.min(10, s.endZone));
@@ -221,7 +223,7 @@ export class Room {
     }
     this.inGame = true;
     const seed = Math.floor(Math.random() * 2 ** 31);
-    const { startZone, endZone, difficulty, teams } = this.settings;
+    const { startZone, endZone, difficulty, teams, length } = this.settings;
     const game = new Game(
       {
         players: this.seats.length,
@@ -229,6 +231,7 @@ export class Room {
         endZone,
         difficulty,
         seed,
+        length,
         ...(teams ? { teams: this.seats.map((s) => s.team) } : {}),
       },
       { onEvent: (e) => this.onEvent(e) },
@@ -243,6 +246,7 @@ export class Room {
       startZone,
       endZone,
       difficulty,
+      length,
       goals: goalViews(game.state),
       teams,
       you: -1,
@@ -360,6 +364,7 @@ function eventDelay(e: GameEvent): number {
     case 'milestone': return 2600;
     case 'payday': return 1700;
     case 'job': return 2200;
+    case 'house': return 2600;
     case 'pathOption': return 900;
     case 'lodge': return 700;
     case 'sabotage': return 1400;

@@ -34,7 +34,12 @@ const URL = process.env.URL || 'http://localhost:3111';
   while (Date.now() - t0 < 120000) {
     if (await page.locator('.center.result').count()) { done = true; break; }
     const ask = page.locator('.ask');
-    if (await ask.count()) {
+    if (await ask.locator('.house').count()) {
+      // 부동산 창: 살 수 있는 가장 싼 집을 사 본다. 없으면 건너뛴다
+      const buy = ask.locator('.house button.primary:not([disabled])');
+      if (await buy.count()) await buy.first().click().catch(() => {});
+      else await ask.locator('.house button:has-text("사지 않는다")').first().click().catch(() => {});
+    } else if (await ask.count()) {
       const title = (await ask.locator('h4').first().innerText()).slice(0, 12);
       if (!asks.has(title) && shots < 8) { asks.add(title); await page.screenshot({ path: `${OUT}/3-ask-${shots++}.png` }); }
       const prim = ask.locator('button.opt.primary:not([disabled])');

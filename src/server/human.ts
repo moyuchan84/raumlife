@@ -1,4 +1,4 @@
-import type { Controller, GameState, JobChoice, JourneyCard, MilestoneChoice } from '../engine';
+import type { Controller, GameState, HouseAnswer, HouseOffer, JobChoice, JourneyCard, MilestoneChoice } from '../engine';
 import { LODGE_COST, LODGE_EFFECT, PATH_ARCHETYPES, ZONES, distancesToSummit } from '../engine';
 import type { Ask } from '../shared/protocol';
 import type { Room } from './room';
@@ -74,6 +74,17 @@ export class HumanController implements Controller {
       (v) => (typeof v === 'number' && Number.isInteger(v) && v >= -1 && v <= 2 && (v === -1 || available[v]) ? v : FALLBACK),
     );
     return r === FALLBACK ? this.fallback.choosePathOption(s, me, zone, available) : r;
+  }
+
+  async chooseHouse(s: GameState, me: number, offer: HouseOffer): Promise<HouseAnswer | null> {
+    const onlyHome = !offer.canBuyVilla;
+    const r = await this.ask({ kind: 'house', offer, onlyHome }, (v) => {
+      if (v === null) return null;
+      if (typeof v !== 'object') return FALLBACK;
+      const k = (v as { kind?: unknown }).kind;
+      return k === 'ready' || k === 'custom' || k === 'villa' ? (v as HouseAnswer) : FALLBACK;
+    });
+    return r === FALLBACK ? this.fallback.chooseHouse(s, me, offer) : r;
   }
 
   async chooseJob(s: GameState, me: number, options: JobChoice[]): Promise<number> {

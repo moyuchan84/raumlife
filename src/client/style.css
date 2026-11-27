@@ -177,3 +177,14 @@ input, select {
 .lg { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .lg .lgi { font-size: 18px; width: 24px; text-align: center; }
 .lg b { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* ── 부동산(집 사기/짓기) ── */
+.ask.wide { width: min(100%, 880px); max-height: 78vh; overflow-y: auto; }
+.house .hgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 10px; }
+.house .hcard { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 12px; padding: 8px; align-items: flex-start; }
+.house .hname { font-weight: 700; }
+.house .hpreview { border-radius: 10px; max-width: 100%; }
+.house .hbuild { display: flex; gap: 14px; flex-wrap: wrap; }
+.house .hleft { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.house .hright { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 260px; }
+.house .crow .clabel { width: 52px; }

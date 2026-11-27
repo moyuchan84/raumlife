@@ -12,3 +12,4 @@ export { MILESTONES, startLife, emptyLife, meets, reqText, staminaCapFor } from 
 export type { MilestoneOption } from './data/life';
 export { JOBS, JOB_BY_ID, salaryOf, pensionOf, jobOffer } from './data/jobs';
 export type { Job } from './data/jobs';
+export * from './data/houses';

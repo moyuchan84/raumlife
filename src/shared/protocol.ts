@@ -1,4 +1,4 @@
-import type { CardDeck, Difficulty, Effect, GameEvent, GameResult, JourneyCard, JobChoice, LifeState, MilestoneChoice, StatKey, Tile } from '../engine';
+import type { CardDeck, Difficulty, Effect, HouseOffer, GameEvent, GameResult, JourneyCard, JobChoice, LifeState, MilestoneChoice, StatKey, Tile } from '../engine';
 import type { Avatar } from './avatar';
 
 export const BOT_KINDS = [
@@ -14,6 +14,8 @@ export interface RoomSettings {
   endZone: number;
   difficulty: Difficulty;
   teams: boolean;
+  /** 여행 길이: 1 보통 / 2 길게 / 3 아주 길게 */
+  length: 1 | 2 | 3;
   /** 사람의 한 번의 결정에 주어지는 시간(초) */
   decisionSeconds: number;
 }
@@ -80,6 +82,7 @@ export interface StartedInfo {
   startZone: number;
   endZone: number;
   difficulty: Difficulty;
+  length: 1 | 2 | 3;
   goals: GoalView[];
   teams: boolean;
   you: number;
@@ -95,6 +98,7 @@ export type Ask =
   | { kind: 'reroll'; card: JourneyCard; roll: number; cost: number }
   | { kind: 'pathOption'; zone: number; names: string[]; effects: Effect[]; available: boolean[] }
   | { kind: 'job'; options: JobChoice[]; growth: number }
+  | { kind: 'house'; offer: HouseOffer; onlyHome: boolean }
   | { kind: 'milestone'; zone: number; title: string; options: MilestoneChoice[]; life: LifeState; asset: number }
   | { kind: 'lodge'; cost: number; effect: Effect; asset: number }
   | { kind: 'sabotage'; targets: number[]; free: boolean; cost: number; cp: number };

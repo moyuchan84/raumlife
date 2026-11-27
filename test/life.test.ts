@@ -130,7 +130,9 @@ describe('인생 상태를 반영한 진행', () => {
     const p = game.state.players[0]!;
     expect(game.lifeDividend(p)).toEqual({});
     p.life = { ...emptyLife(), career: '회사원', jobId: 'office', partner: true, children: 2, grandchildren: 1, home: true };
-    expect(game.lifeDividend(p)).toEqual({ asset: 1, happy: 2, network: 1 }); // 월급은 섬을 옮길 때 따로 받는다
+    expect(game.lifeDividend(p)).toEqual({ happy: 2, network: 1 }); // 월급은 섬을 옮길 때 따로 받고, 집의 이득은 집이 있을 때(house) 받는다
+    p.life.house = { kind: 'ready', name: '아파트', size: 2, style: 1, color: 4, extras: [], price: 4, tileId: 0, zone: 6 };
+    expect(game.lifeDividend(p)).toEqual({ asset: 1, happy: 2, network: 1 });
   });
 
   it('인생 효과가 상태에 반영된다 (자녀 3명 상한 포함)', () => {
@@ -196,6 +198,7 @@ class SafeCtrl implements Controller {
   chooseCpBoost(): number { return 0; }
   wantReroll(): boolean { return false; }
   choosePathOption(_s: GameState, _me: number, _z: number, a: boolean[]): number { return a.findIndex(Boolean); }
+  chooseHouse(): null { return null; }
   chooseJob(_s: GameState, _me: number, o: { enabled: boolean }[]): number { return o.findIndex((x) => x.enabled); }
   chooseMilestone(_s: GameState, _me: number, _z: number, _t: string, o: { enabled: boolean }[]): number { return o.findIndex((x) => x.enabled); }
   chooseLodge(): boolean { return false; }

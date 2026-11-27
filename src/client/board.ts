@@ -11,6 +11,7 @@ export const TILE_ICON: Record<TileType, string> = {
   camp: '⛺',
   path: '🪧',
   lodge: '🏠',
+  estate: '🏘️',
   fork: '🔀',
   weather: '🌦️',
   milestone: '🚩',
@@ -24,6 +25,7 @@ const BABY_ICON: Record<TileType, string> = {
   camp: '🛏️',
   path: '⭐',
   lodge: '🧸',
+  estate: '🏘️',
   fork: '🔀',
   weather: '☁️',
   milestone: '🎀',
@@ -40,6 +42,7 @@ export const TILE_NAME: Record<TileType, string> = {
   camp: '캠프',
   path: '진로',
   lodge: '보금자리',
+  estate: '부동산',
   fork: '갈림길',
   weather: '날씨',
   milestone: '이정표',
@@ -64,7 +67,6 @@ export interface Pt {
   y: number;
 }
 
-const W = 860;
 const LEFT = 120;
 const RIGHT = 36;
 const ROW_H = 150;
@@ -82,6 +84,10 @@ export interface Layout {
 /** 구간마다 한 줄씩, 아래(시작)에서 위(정상)로 지그재그로 올라가는 배치 */
 export function layoutBoard(tiles: Tile[], startZone: number, endZone: number): Layout {
   const n = endZone - startZone + 1;
+  // 칸이 많은 섬(긴 여행)은 가로로 더 넓게 그려 칸이 겹치지 않게 한다
+  let maxCols = 12;
+  for (let z = startZone; z <= endZone; z++) maxCols = Math.max(maxCols, tiles.filter((t) => t.zone === z && t.route !== 'short').length);
+  const W = Math.max(860, LEFT + RIGHT + (maxCols - 1) * 38);
   const pos: Pt[] = new Array(tiles.length);
   const height = TOP * 2 + n * ROW_H;
   const zoneRows: Layout['zoneRows'] = [];

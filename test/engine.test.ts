@@ -26,6 +26,7 @@ class SafeCtrl implements Controller {
   chooseCpBoost(): number { return 0; }
   wantReroll(): boolean { return false; }
   choosePathOption(_s: GameState, _me: number, _z: number, a: boolean[]): number { return a.findIndex(Boolean); }
+  chooseHouse(): null { return null; }
   chooseJob(_s: GameState, _me: number, o: { enabled: boolean }[]): number { return o.findIndex((x) => x.enabled); }
   chooseMilestone(_s: GameState, _me: number, _z: number, _t: string, o: { enabled: boolean }[]): number { return o.findIndex((x) => x.enabled); }
   chooseLodge(): boolean { return false; }
@@ -75,7 +76,7 @@ describe('새 칸과 카드', () => {
   it('보드에 액티비티·트러블 칸이 있고, 지름길은 액티비티를 지난다', () => {
     const board = buildBoard(1, 10);
     const types = new Set(board.tiles.map((t) => t.type));
-    for (const t of ['journey', 'activity', 'trouble', 'camp', 'path', 'lodge', 'fork', 'weather', 'milestone', 'summit']) expect(types.has(t as never)).toBe(true);
+    for (const t of ['journey', 'activity', 'trouble', 'camp', 'estate', 'lodge', 'fork', 'weather', 'milestone', 'summit']) expect(types.has(t as never)).toBe(true);
     expect(board.tiles.filter((t) => t.route === 'short' && t.type === 'activity').length).toBe(8);
   });
   it('모든 구간에 각 덱의 전용 카드가 있고, 카드 효과가 설계 의도에 맞다', () => {

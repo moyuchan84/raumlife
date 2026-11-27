@@ -16,11 +16,12 @@ import type {
 import { STAT_KEYS } from './types';
 import type { Controller } from './controller';
 import { Rng } from './rng';
-import { buildBoard } from './board';
+import { buildBoard, LENGTH_FACTOR } from './board';
 import { DECKS } from './data/cards';
 import { WEATHER } from './data/weather';
-import { PATH_ARCHETYPES } from './data/zones';
+import { PATH_ARCHETYPES, ZONES } from './data/zones';
 import { MILESTONES, meets, reqText, staminaCapFor, startLife } from './data/life';
+import { hasAnythingToBuy, houseDividend, makeOffer, validAnswer, type HouseOffer } from './data/houses';
 import type { JobChoice, MilestoneChoice } from './controller';
 import { JOB_BY_ID, jobOffer, pensionOf, salaryOf } from './data/jobs';
 import { DEFAULT_TUNING } from './tuning';
@@ -55,11 +56,12 @@ export class Game {
     const tuning: Tuning = {
       ...DEFAULT_TUNING,
       ...config.tuning,
+      lengthGain: config.tuning?.lengthGain ?? DEFAULT_TUNING.lengthGain,
       difficultyCoef: { ...DEFAULT_TUNING.difficultyCoef, ...(config.tuning?.difficultyCoef ?? {}) },
       statWeight: { ...DEFAULT_TUNING.statWeight, ...(config.tuning?.statWeight ?? {}) },
     };
     this.rng = new Rng(config.seed);
-    const board = buildBoard(config.startZone, config.endZone);
+    const board = buildBoard(config.startZone, config.endZone, config.length ?? 1);
     const goals = generateGoals(config, tuning, this.rng);
     const players: PlayerState[] = Array.from({ length: config.players }, (_, i) => ({
       id: i,
@@ -86,6 +88,11 @@ export class Game {
       sabotageImmuneUntilRound: 0,
       lastSabotageRound: 0,
     }));
+    for (const pl of players) {
+      if (pl.life.home && !pl.life.house) {
+        pl.life.house = { kind: 'ready', name: '아파트', size: 2, style: 1, color: 4, extras: [], price: 4, tileId: board.start, zone: config.startZone };
+      }
+    }
     this.state = {
       config,
       tuning,
@@ -283,6 +290,8 @@ export class Game {
     if (zoneAfter !== zoneBefore) {
       await this.emit({ t: 'zoneEnter', player: idx, zone: zoneAfter });
       await this.payday(p, zoneAfter);
+      // 섬에 들어서면 진로를 고른다 (선착순, 자리가 한정되어 플레이어끼리 경쟁한다)
+      if (ZONES[zoneAfter - 1]!.length === 16) await this.resolvePath(p, ctrl, zoneAfter);
     }
     if (p.arrived) return;
 
@@ -344,7 +353,7 @@ export class Game {
     }
     if (this.countdownEndsRound === null) {
       const zones = s.config.endZone - s.config.startZone + 1;
-      const cd = Math.max(s.tuning.countdownRounds, Math.ceil(zones * s.tuning.countdownPerZone));
+      const cd = Math.max(s.tuning.countdownRounds, Math.ceil(zones * s.tuning.countdownPerZone * LENGTH_FACTOR[(s.config.length ?? 1) - 1]!));
       this.countdownEndsRound = s.round + cd;
       s.countdownLeft = cd;
     }
@@ -367,8 +376,8 @@ export class Game {
         if (mates > 0) this.applyEffect(p, { network: 1 });
         return;
       }
-      case 'path':
-        return this.resolvePath(p, ctrl, tile);
+      case 'estate':
+        return this.resolveEstate(p, ctrl, tile);
       case 'lodge':
         if (p.stats.asset >= LODGE_COST && (await ctrl.chooseLodge(s, p.id))) {
           this.applyEffect(p, { asset: -LODGE_COST, ...LODGE_EFFECT });
@@ -385,7 +394,7 @@ export class Game {
       }
       case 'milestone': {
         this.applyEffect(p, { asset: 1 }); // 이정표 축하금
-        await this.resolveMilestone(p, ctrl, tile.zone);
+        await this.resolveMilestone(p, ctrl, tile.zone, tile);
         this.applyEffect(p, this.lifeDividend(p));
         const zonesDone = tile.zone - s.config.startZone + 1;
         const sum = STAT_KEYS.reduce((a, k) => a + p.stats[k], 0);
@@ -411,10 +420,12 @@ export class Game {
     const add = (k: 'asset' | 'happy' | 'network', n: number) => {
       e[k] = (e[k] ?? 0) + n;
     };
-    if (l.home) add('asset', 1);
     if (l.partner) add('happy', 1);
     if (l.children > 0) add('network', 1);
     if (l.grandchildren > 0) add('happy', 1);
+    const h = houseDividend(l);
+    for (const k of ['asset', 'happy', 'network', 'growth'] as const) if (h[k]) e[k] = (e[k] ?? 0) + h[k]!;
+    if (h.stamina) e.stamina = (e.stamina ?? 0) + h.stamina;
     return e;
   }
 
@@ -447,8 +458,38 @@ export class Game {
     await this.emit({ t: 'payday', player: p.id, zone, job: job.name, amount, pension, effect });
   }
 
+  /** 부동산 칸: 원래 있는 집을 사거나 직접 지을 수 있고, 돈이 많으면 별장도 살 수 있다 (사는 집은 그대로) */
+  private async resolveEstate(p: PlayerState, ctrl: Controller, tile: Tile): Promise<void> {
+    const offer = makeOffer(p.life, p.stats.asset);
+    if (!hasAnythingToBuy(offer)) {
+      this.applyEffect(p, { happy: 1 }); // 모델하우스 구경
+      return;
+    }
+    await this.resolveHouse(p, ctrl, tile, false);
+  }
+
+  /** 집/별장 구매 흐름. onlyHome=true 면 사는 집만(이정표의 내 집 마련) */
+  private async resolveHouse(p: PlayerState, ctrl: Controller, tile: Tile, onlyHome: boolean): Promise<void> {
+    const offer: HouseOffer = makeOffer(p.life, p.stats.asset, onlyHome);
+    if (!hasAnythingToBuy(offer)) return;
+    const answer = await ctrl.chooseHouse(this.state, p.id, offer);
+    if (!answer) return;
+    const q = validAnswer(answer, offer);
+    if (!q) return;
+    const spec = { ...q.spec, tileId: tile.id, zone: tile.zone };
+    this.applyEffect(p, q.effect);
+    if (spec.kind === 'villa') {
+      p.life.villa = spec;
+    } else {
+      p.life.house = spec;
+      p.life.home = true;
+    }
+    this.m(spec.kind === 'villa' ? 'villaBought' : spec.kind === 'custom' ? 'houseBuilt' : 'houseBought');
+    await this.emit({ t: 'house', player: p.id, spec, effect: q.effect });
+  }
+
   /** 구간 끝에서 인생의 갈림길(진학·취업·결혼·집·은퇴…)을 고른다 */
-  private async resolveMilestone(p: PlayerState, ctrl: Controller, zone: number): Promise<void> {
+  private async resolveMilestone(p: PlayerState, ctrl: Controller, zone: number, tile: Tile): Promise<void> {
     const info = MILESTONES[zone];
     if (!info) return;
     const choices: MilestoneChoice[] = info.options.map((o) => {
@@ -461,6 +502,11 @@ export class Game {
     const opt = info.options[pick]!;
     let success: boolean | null = null;
     let effect = opt.effect;
+    if (opt.action === 'house') {
+      await this.resolveHouse(p, ctrl, tile, true);
+      this.m(`milestone:${opt.id}`);
+      return;
+    }
     if (opt.dc) {
       success = this.rng.die() >= opt.dc;
       effect = success ? opt.effect : (opt.fail ?? {});
@@ -475,7 +521,7 @@ export class Game {
     const deck = tile.type as CardDeck;
     const drawn = this.drawCard(deck, tile.zone, p);
     // 지름길은 험해서 판정이 한 단계 어렵다
-    const card: JourneyCard = tile.risky ? { ...drawn, challenge: { ...drawn.challenge, dc: Math.min(6, drawn.challenge.dc + 1) } } : drawn;
+    const card: JourneyCard = tile.risky ? { ...drawn, challenge: { ...drawn.challenge, dc: Math.min(6, drawn.challenge.dc + 1), staminaCost: drawn.challenge.staminaCost + 1 } } : drawn;
     const cost = card.challenge.staminaCost;
     const canSafe = !tile.risky;
     let choice: 'safe' | 'challenge' = await ctrl.chooseCardOption(s, p.id, card, canSafe);
@@ -513,22 +559,22 @@ export class Game {
     await this.emit({ t: 'card', player: p.id, deck, card, choice, boost, roll, success: ok, rerolled });
   }
 
-  private async resolvePath(p: PlayerState, ctrl: Controller, tile: Tile): Promise<void> {
+  private async resolvePath(p: PlayerState, ctrl: Controller, zone: number): Promise<void> {
     const s = this.state;
     const cap = Math.ceil(s.players.length / 2);
-    const available = [0, 1, 2].map((i) => (s.pathSlots[`${tile.zone}:${i}`] ?? 0) < cap);
+    const available = [0, 1, 2].map((i) => (s.pathSlots[`${zone}:${i}`] ?? 0) < cap);
     if (!available.some(Boolean)) {
       this.m('pathAllFull');
       return;
     }
-    const pick = await ctrl.choosePathOption(s, p.id, tile.zone, available);
+    const pick = await ctrl.choosePathOption(s, p.id, zone, available);
     if (pick < 0 || pick > 2 || !available[pick]) return;
-    const key = `${tile.zone}:${pick}`;
+    const key = `${zone}:${pick}`;
     s.pathSlots[key] = (s.pathSlots[key] ?? 0) + 1;
     this.applyEffect(p, PATH_ARCHETYPES[pick]!);
     p.track.pathsTaken++;
     this.m('pathTaken');
-    await this.emit({ t: 'pathOption', player: p.id, zone: tile.zone, option: pick });
+    await this.emit({ t: 'pathOption', player: p.id, zone, option: pick });
   }
 
   private sabotageTargets(p: PlayerState, free: boolean): number[] {
@@ -557,7 +603,7 @@ export class Game {
     this.applyEffect(p, { cp: -s.tuning.sabotageCost });
     this.applyEffect(target, SABOTAGE_EFFECT);
     target.track.sabotaged++;
-    target.sabotageImmuneUntilRound = s.round + 1; // 연속 방해 방지
+    target.sabotageImmuneUntilRound = s.round + (s.config.length ?? 1); // 연속 방해 방지 (긴 여행일수록 더 오래)
     this.m('sabotages');
     this.log(`${p.name} → ${target.name} 방해`);
     await this.emit({ t: 'sabotage', from: p.id, to: target.id, free: false });

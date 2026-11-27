@@ -1,18 +1,20 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { Tile, TileType } from '../engine';
-import { Rng, ZONES } from '../engine';
+import type { HouseSpec, Tile, TileType } from '../engine';
+import { HOUSE_COLORS, Rng, ZONES } from '../engine';
 import { SEAT_COLORS } from '../shared/avatar';
 import type { PlayerView } from '../shared/protocol';
 import { animateCharacter, createCharacter, type Char3D, type CharMode } from './avatar3d';
 import { tileIcon } from './board';
 
 // ───────── 배치 ─────────
-const SPACING = 42; // 섬 사이 간격
 const SWAY = 20; // 섬이 지그재그로 놓이는 폭
+const GAP = 16; // 섬과 섬 사이의 바다(다리) 길이
 const TOP_Y = 1.0; // 섬 윗면 높이
 const R_STD = 13;
 const R_SHORT = 10;
+/** 칸 사이 최소 간격을 지키기 위해 칸이 많은 섬은 더 크게 만든다 */
+const RADIUS_PER_TILE = 0.96;
 
 export interface Island {
   zone: number;
@@ -31,19 +33,33 @@ const mod2pi = (x: number) => ((x % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2
 /**
  * 구간(=섬)마다 하나의 섬을 만들고, 섬들을 바다 위에 지그재그로 늘어놓는다.
  * 해안길은 섬의 둘레를 따라 호를 그리고, 지름길은 그 호를 가로지르는 직선(현)이다.
+ * 칸이 많으면(긴 여행) 섬이 커진다.
  */
 export function layout3d(tiles: Tile[], startZone: number, endZone: number) {
   const n = endZone - startZone + 1;
   const pos: THREE.Vector3[] = new Array(tiles.length);
-  const centers = Array.from({ length: n }, (_, i) => new THREE.Vector3(i * SPACING - ((n - 1) * SPACING) / 2, 0, Math.sin(i * 1.1) * SWAY));
+  const radii = Array.from({ length: n }, (_, i) => {
+    const z = startZone + i;
+    const m = tiles.filter((t) => t.zone === z && t.route !== 'short').length;
+    const base = ZONES[z - 1]!.length === 16 ? R_STD : R_SHORT;
+    return Math.max(base, (m - 1) * RADIUS_PER_TILE);
+  });
+  // 섬을 한 줄로 늘어놓되 위아래로 구불구불하게
+  const centers: THREE.Vector3[] = [];
+  let x = 0;
+  for (let i = 0; i < n; i++) {
+    if (i > 0) x += radii[i - 1]! + radii[i]! + GAP;
+    centers.push(new THREE.Vector3(x, 0, Math.sin(i * 1.1) * SWAY));
+  }
+  const mid = x / 2;
+  for (const c of centers) c.x -= mid;
   const islands: Island[] = [];
   const bridges: { a: THREE.Vector3; b: THREE.Vector3 }[] = [];
 
   for (let i = 0; i < n; i++) {
     const z = startZone + i;
-    const info = ZONES[z - 1]!;
     const c = centers[i]!;
-    const radius = info.length === 16 ? R_STD : R_SHORT;
+    const radius = radii[i]!;
     const ringR = radius * 0.88;
     const thetaIn = i === 0 ? Math.PI : ang2(c, centers[i - 1]!);
     const thetaOut = i === n - 1 ? thetaIn + Math.PI : ang2(c, centers[i + 1]!);
@@ -77,7 +93,8 @@ export function layout3d(tiles: Tile[], startZone: number, endZone: number) {
     const first = tiles.filter((t) => t.zone === startZone + i + 1).reduce((a, t) => (t.id < a.id ? t : a));
     bridges.push({ a: pos[last.id]!.clone(), b: pos[first.id]!.clone() });
   }
-  return { pos, islands, bridges };
+  const width = (centers[n - 1]!.x - centers[0]!.x) + radii[0]! + radii[n - 1]! + 40;
+  return { pos, islands, bridges, width };
 }
 
 // ───────── 재료 ─────────
@@ -263,6 +280,91 @@ function lighthouse(): THREE.Group {
   return g;
 }
 
+/** 부동산 칸의 표지판: 작은 집과 '매매' 깃발 */
+function estateProp(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mk(GEO.box, lam('#f6f0e2'), 1.1, 0.8, 1.0, 0, 0.4, 0));
+  const roof = mk(GEO.cone, lam('#e07a5f'), 1.0, 0.7, 1.0, 0, 1.15, 0);
+  roof.rotation.y = Math.PI / 4;
+  g.add(roof, mk(GEO.cyl, lam('#8a5a33'), 0.05, 1.6, 0.05, 0.95, 0.8, 0.5), mk(GEO.box, lam('#ffffff'), 0.7, 0.4, 0.05, 1.25, 1.4, 0.5));
+  return g;
+}
+
+const HOUSE_WALL = ['#b07a45', '#f3f1ec', '#dcc29a', '#b9553d', '#cfae72', '#fbfbfb'];
+const HOUSE_SIZE = { 1: 1, 2: 1.35, 3: 1.8 } as const;
+
+/** 산 집·직접 지은 집·별장의 3D 모형. owner = 주인 색(지붕 깃발) */
+export function houseModel(spec: HouseSpec, owner: string): THREE.Group {
+  const g = new THREE.Group();
+  const sc = HOUSE_SIZE[spec.size];
+  const w = 2.8 * sc;
+  const d = 2.4 * sc;
+  const hgt = 1.7 * sc;
+  const roofCol = HOUSE_COLORS[spec.color] ?? '#d86a6a';
+  g.add(mk(GEO.box, lam(HOUSE_WALL[spec.style] ?? '#eeeeee'), w, hgt, d, 0, hgt / 2, 0));
+  const top = hgt;
+  switch (spec.style) {
+    case 1: // 현대식: 납작한 지붕과 큰 창
+      g.add(mk(GEO.box, lam('#4a4f57'), w + 0.5, 0.28, d + 0.5, 0, top + 0.14, 0), mk(GEO.box, lam('#9fd6ee'), w * 0.6, hgt * 0.55, 0.05, 0, hgt * 0.55, d / 2 + 0.02));
+      break;
+    case 2: { // 한옥: 짙은 기와 지붕
+      const r = mk(GEO.cone, lam('#4b4f58'), w * 0.95, 1.4 * sc, d * 0.95, 0, top + 0.7 * sc, 0);
+      r.rotation.y = Math.PI / 4;
+      g.add(r, mk(GEO.box, lam('#4b4f58'), w + 1.1, 0.2, d + 1.1, 0, top + 0.05, 0));
+      break;
+    }
+    case 3: { // 벽돌집: 회색 박공지붕
+      const r = mk(GEO.cone, lam('#6b7078'), w * 0.85, 1.3 * sc, d * 0.85, 0, top + 0.65 * sc, 0);
+      r.rotation.y = Math.PI / 4;
+      g.add(r);
+      break;
+    }
+    case 4: { // 오두막: 짚 지붕
+      const r = mk(GEO.cone, lam('#e8c35a'), w * 0.8, 1.5 * sc, d * 0.8, 0, top + 0.75 * sc, 0);
+      g.add(r);
+      break;
+    }
+    case 5: // 지중해풍: 파란 돔
+      g.add(mk(GEO.sphere, lam(roofCol), w * 0.42, 0.9 * sc, d * 0.42, 0, top, 0));
+      break;
+    default: { // 통나무집: 색 있는 박공지붕
+      const r = mk(GEO.cone, lam(roofCol), w * 0.85, 1.3 * sc, d * 0.85, 0, top + 0.65 * sc, 0);
+      r.rotation.y = Math.PI / 4;
+      g.add(r);
+    }
+  }
+  // 문과 창
+  g.add(mk(GEO.box, lam(roofCol), 0.5 * sc, 0.9 * sc, 0.06, 0, 0.45 * sc, d / 2 + 0.02));
+  for (const sx of [-1, 1]) g.add(mk(GEO.box, lam('#bfe6f7'), 0.45 * sc, 0.4 * sc, 0.06, sx * w * 0.3, hgt * 0.62, d / 2 + 0.02));
+  // 옵션
+  if (spec.extras.includes('attic')) g.add(mk(GEO.box, lam(HOUSE_WALL[spec.style] ?? '#eee'), 0.7 * sc, 0.6 * sc, 0.6 * sc, 0, top + 0.9 * sc, d * 0.1));
+  if (spec.extras.includes('solar')) {
+    const p = mk(GEO.box, lam('#26365a'), 1.1 * sc, 0.05, 0.9 * sc, w * 0.22, top + 0.62 * sc, d * 0.16);
+    p.rotation.x = -0.5;
+    g.add(p);
+  }
+  if (spec.extras.includes('garden')) {
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      g.add(mk(GEO.ico, lam(i % 2 ? '#3f9b4a' : '#58b04f'), 0.34, 0.3, 0.34, Math.cos(a) * (w * 0.75), 0.25, Math.sin(a) * (d * 0.75) + 0.2));
+    }
+    for (let i = 0; i < 5; i++) g.add(mk(GEO.sphere, lam(['#ff7a90', '#ffd24a', '#ffffff', '#c58bff', '#ff9a4a'][i]!), 0.12, 0.12, 0.12, -w * 0.6 + i * (w * 0.3), 0.55, d * 0.78));
+  }
+  if (spec.extras.includes('pool')) {
+    g.add(mk(GEO.box, lam('#5ec0e8'), 1.8 * sc, 0.08, 1.2 * sc, w * 0.5 + 1.8 * sc, 0.05, d * 0.15), mk(GEO.box, lam('#ffffff'), 2.0 * sc, 0.06, 1.4 * sc, w * 0.5 + 1.8 * sc, 0.02, d * 0.15));
+  }
+  if (spec.kind === 'villa') {
+    for (const sx of [-1, 1]) {
+      const pm = palm(new Rng(spec.tileId + (sx > 0 ? 7 : 0)));
+      pm.position.set(sx * (w * 0.9), 0, d * 0.5);
+      g.add(pm);
+    }
+  }
+  // 주인 색 깃발
+  g.add(mk(GEO.cyl, lam('#8a8f99'), 0.05, 1.3, 0.05, 0, top + (spec.style === 1 ? 0.2 : 1.3 * sc) + 0.65, 0), mk(GEO.box, lam(owner), 0.7, 0.4, 0.05, 0.35, top + (spec.style === 1 ? 0.2 : 1.3 * sc) + 1.1, 0));
+  return g;
+}
+
 interface Biome {
   ground: string;
   sand: string;
@@ -293,6 +395,8 @@ export interface Board3D {
   update(players: PlayerView[], current: number, me: number): void;
   animateMove(player: number, path: number[]): void;
   floatText(tileId: number, text: string): void;
+  /** 플레이어들이 산 집·별장을 해당 섬에 세운다 (이미 있는 건 그대로) */
+  setHouses(list: { key: string; spec: HouseSpec; color: string; slot: number }[]): void;
   /** 캐릭터 머리 위에 축하 문구를 띄우고 만세를 시킨다 */
   celebrate(player: number, text: string): void;
   focus(tileId: number): void;
@@ -343,6 +447,7 @@ const TILE_COLOR: Record<TileType, string> = {
   camp: '#f0a04a',
   path: '#b58cf0',
   lodge: '#f08aa0',
+  estate: '#f0a0c8',
   fork: '#5aa0e8',
   weather: '#8cc4e8',
   milestone: '#ffd23f',
@@ -367,7 +472,7 @@ function jitter(geo: THREE.BufferGeometry, amp: number) {
 }
 
 export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: number, endZone: number): Board3D {
-  const { pos, islands, bridges } = layout3d(tiles, startZone, endZone);
+  const { pos, islands, bridges, width } = layout3d(tiles, startZone, endZone);
   const n = islands.length;
   const rng = new Rng(20240611);
 
@@ -386,7 +491,8 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
   scene.add(sun);
 
   // ── 바다
-  const seaGeo = new THREE.PlaneGeometry(900, 500, 70, 40);
+  const seaW = width + 700;
+  const seaGeo = new THREE.PlaneGeometry(seaW, 900, Math.round(seaW / 14), 56);
   seaGeo.rotateX(-Math.PI / 2);
   const sea = new THREE.Mesh(seaGeo, new THREE.MeshPhongMaterial({ color: 0x3aa8d8, flatShading: true, transparent: true, opacity: 0.92, shininess: 60 }));
   sea.position.y = 0.05;
@@ -444,6 +550,26 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
   void tube;
 
   // ── 섬
+  // 집터: 부동산·이정표 칸의 안쪽(섬 중심 쪽)에 집이 세워진다. 소품이 겹치지 않게 비워 둔다
+  const plotCenter = (tileId: number, slot: number, villa: boolean): THREE.Vector3 => {
+    const t = tiles[tileId]!;
+    const isl = islands[t.zone - startZone]!;
+    const p = pos[tileId]!;
+    const inward = new THREE.Vector3(isl.center.x - p.x, 0, isl.center.z - p.z);
+    if (inward.lengthSq() < 1e-4) inward.set(0, 0, -1);
+    inward.normalize();
+    const lateral = new THREE.Vector3(-inward.z, 0, inward.x);
+    return p.clone().addScaledVector(inward, villa ? 10 : 5.2).addScaledVector(lateral, (slot - 2.5) * 4.2).setY(TOP_Y + liftOfZone(t.zone));
+  };
+  const plots: { x: number; z: number; r: number }[] = [];
+  for (const t of tiles) {
+    if (t.type !== 'estate' && t.type !== 'milestone') continue;
+    for (const villa of [false, true]) for (const slot of [1.5, 2.5, 3.5]) {
+      const c = plotCenter(t.id, slot, villa);
+      plots.push({ x: c.x, z: c.z, r: 4.2 });
+    }
+  }
+
   islands.forEach((isl) => {
     const biome = BIOMES[(isl.zone - 1) % BIOMES.length]!;
     const R = isl.radius;
@@ -529,12 +655,14 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
     }
     let tries = 0;
     let made = 0;
-    while (made < biome.count && tries++ < biome.count * 25) {
+    const count = Math.round(biome.count * Math.min(2.2, Math.pow(R / 13, 1.4)));
+    while (made < count && tries++ < count * 25) {
       const a = rng.next() * Math.PI * 2;
       const r = Math.sqrt(rng.next()) * (R - 1.2);
       const x = isl.center.x + Math.cos(a) * r;
       const z = isl.center.z + Math.sin(a) * r;
       if (clearance(x, z) < 2.6) continue;
+      if (plots.some((q) => Math.hypot(q.x - x, q.z - z) < q.r)) continue; // 집터는 비워 둔다
       if (placed.some((p) => Math.hypot(p.x - x, p.z - z) < (biome.featureClear ?? 3) + 2.2)) continue;
       const prop = biome.mix(rng);
       if (!prop) continue;
@@ -592,6 +720,7 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
     switch (t.type) {
       case 'camp': prop = tent(); break;
       case 'lodge': prop = house(); break;
+      case 'estate': prop = estateProp(); break;
       case 'milestone': prop = flag(); break;
       case 'activity': prop = umbrella(); break;
       case 'trouble': prop = troubleProp(); break;
@@ -633,7 +762,7 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
   // ── 구름
   for (let i = 0; i < 9; i++) {
     const c = cloudPuff(rng, 2.4);
-    c.position.set((rng.next() - 0.5) * (n * SPACING + 80), 38 + rng.next() * 18, (rng.next() - 0.5) * 140);
+    c.position.set((rng.next() - 0.5) * (width + 80), 38 + rng.next() * 18, (rng.next() - 0.5) * 140);
     scene.add(c);
     clouds.push(c);
   }
@@ -715,6 +844,7 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
   controls.addEventListener('start', () => (lastUserMove = performance.now()));
 
   const floats: { s: THREE.Sprite; t0: number; y0: number }[] = [];
+  const houseObjs = new Map<string, { g: THREE.Group; t0: number }>();
 
   function resize() {
     const w = container.clientWidth || 1;
@@ -754,7 +884,7 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
     });
     clouds.forEach((c, i) => {
       c.position.x += dt * (0.8 + (i % 3) * 0.3);
-      if (c.position.x > n * SPACING * 0.5 + 80) c.position.x = -n * SPACING * 0.5 - 80;
+      if (c.position.x > width * 0.5 + 80) c.position.x = -width * 0.5 - 80;
     });
     tileIconSprites.forEach((s, i) => (s.position.y = (s.userData.baseY as number) + Math.sin(t * 2 + i) * 0.18));
 
@@ -812,7 +942,7 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
     // 카메라 추적
     if (overview) {
       controls.target.lerp(new THREE.Vector3(0, 0, 0), ease(dt, 0.4));
-      const d = Math.max(130, n * SPACING * 1.05);
+      const d = Math.max(130, width * 0.62);
       camera.position.lerp(new THREE.Vector3(0, d * 0.78, d * 0.6), ease(dt, 0.6));
     } else {
       const who = current >= 0 ? current : me;
@@ -844,6 +974,10 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
       fl.s.position.y = fl.y0 + 4.2 + u * 3;
       (fl.s.material as THREE.SpriteMaterial).opacity = 1 - u * u;
     }
+    for (const h of houseObjs.values()) {
+      const u = Math.min(1, (now - h.t0) / 800);
+      h.g.scale.setScalar(0.15 + 0.85 * (1 - Math.pow(1 - u, 3)) + Math.sin(u * Math.PI) * 0.15);
+    }
     controls.update();
     renderer.render(scene, camera);
   };
@@ -861,6 +995,20 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
       if (!t || !path.length) return;
       const lifted = (id: number) => pos[id]!.clone().setY(pos[id]!.y + liftOfZone(tiles[id]!.zone));
       t.anim = { pts: [t.cur.clone(), ...path.map(lifted)], t0: performance.now() };
+    },
+    setHouses(list) {
+      for (const it of list) {
+        if (houseObjs.has(it.key)) continue;
+        const g = houseModel(it.spec, it.color);
+        const c = plotCenter(it.spec.tileId, it.slot, it.spec.kind === 'villa');
+        const t = tiles[it.spec.tileId]!;
+        const isl = islands[t.zone - startZone]!;
+        g.position.copy(c);
+        g.rotation.y = Math.atan2(isl.center.x - c.x, isl.center.z - c.z) + Math.PI; // 문이 섬 바깥(길) 쪽을 본다
+        g.scale.setScalar(0.15);
+        scene.add(g);
+        houseObjs.set(it.key, { g, t0: performance.now() });
+      }
     },
     celebrate(player, text) {
       const t = toks.get(player);

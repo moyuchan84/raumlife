@@ -1,7 +1,7 @@
 import type { Effect, LifeState, Req } from '../types';
 
 export function emptyLife(): LifeState {
-  return { career: null, jobId: null, raise: 0, jobAsked: false, partner: false, children: 0, grandchildren: 0, home: false };
+  return { house: null, villa: null, career: null, jobId: null, raise: 0, jobAsked: false, partner: false, children: 0, grandchildren: 0, home: false };
 }
 
 /** 중간 구간에서 시작하는 코스를 위한 표준 인생 상태 (앞 구간의 기록을 대신한다) */
@@ -66,6 +66,8 @@ export interface MilestoneOption {
   dc?: number;
   fail?: Effect;
   requires?: Req;
+  /** 'house' 면 고른 뒤 집을 사거나 짓는 화면이 열린다 */
+  action?: 'house';
 }
 export interface MilestoneInfo {
   title: string;
@@ -117,7 +119,7 @@ export const MILESTONES: Record<number, MilestoneInfo> = {
   6: {
     title: '인생의 중반 — 무엇을 가꿀까',
     options: [
-      { id: 'home', name: '내 집 마련', desc: '대출을 받아 보금자리를 사요 (💰2 필요)', effect: { asset: -2, happy: 2, life: { home: true } }, requires: { noHome: true, minAsset: 2 } },
+      { id: 'home', name: '내 집 마련', desc: '원래 있는 집을 사거나 직접 지어요 (💰2 이상 필요)', effect: {}, action: 'house', requires: { noHome: true, minAsset: 2 } },
       { id: 'child', name: '아이를 맞이하기', desc: '가정을 꾸려요 (주사위)', effect: { happy: 3, asset: -1, life: { children: 1 } }, dc: 3, fail: { happy: 1 }, requires: { partner: true, childrenLt: 2 } },
       { id: 'promo', name: '승진·이직에 도전', desc: '연봉이 오르면 월급이 +1 (주사위)', effect: { growth: 1, life: { raise: 1 } }, dc: 3, fail: { growth: 1 }, requires: { career: true } },
       { id: 'family', name: '가족과 보내는 시간', desc: '쉬며 재충전', effect: { happy: 2, network: 1, stamina: 2 } },
@@ -127,7 +129,7 @@ export const MILESTONES: Record<number, MilestoneInfo> = {
     title: '은퇴 준비',
     options: [
       { id: 'saving', name: '노후 자금 마련', desc: '든든한 노후', effect: { asset: 3 } },
-      { id: 'late-home', name: '내 집 마련', desc: '늦었지만 보금자리를 사요 (💰2 필요)', effect: { asset: -2, happy: 2, life: { home: true } }, requires: { noHome: true, minAsset: 2 } },
+      { id: 'late-home', name: '내 집 마련', desc: '늦었지만 집을 사거나 직접 지어요 (💰2 이상 필요)', effect: {}, action: 'house', requires: { noHome: true, minAsset: 2 } },
       { id: 'support', name: '자녀의 독립 돕기', desc: '자식 농사의 마무리', effect: { happy: 2, network: 1, asset: -1 }, requires: { children: 1 } },
       { id: 'health', name: '건강 챙기기', desc: '운동과 검진', effect: { stamina: 3, happy: 1 } },
       { id: 'hobby', name: '새 취미·배움', desc: '제2의 청춘', effect: { growth: 2, happy: 1 } },

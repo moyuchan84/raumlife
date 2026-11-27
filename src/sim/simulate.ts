@@ -16,6 +16,7 @@ interface Args {
   seed: number;
   teams: boolean;
   json: boolean;
+  length: 1 | 2 | 3;
   tuning: Record<string, number | number[]>;
 }
 
@@ -30,6 +31,7 @@ function parseArgs(argv: string[]): Args {
     seed: 1,
     teams: false,
     json: false,
+    length: 1,
     tuning: {},
   };
   for (let i = 0; i < argv.length; i++) {
@@ -45,6 +47,7 @@ function parseArgs(argv: string[]): Args {
       case '--seed': a.seed = Number(v); i++; break;
       case '--teams': a.teams = true; break;
       case '--json': a.json = true; break;
+      case '--length': a.length = Number(v) as 1 | 2 | 3; i++; break;
       case '--tune': {
         const [key, val] = v!.split('=');
         a.tuning[key!] = val!.includes(',') ? val!.split(',').map(Number) : Number(val);
@@ -80,6 +83,7 @@ export async function simulate(args: Args) {
       endZone: args.end,
       difficulty: args.difficulty,
       seed,
+      length: args.length,
       tuning: args.tuning as never,
       ...(args.teams ? { teams: Array.from({ length: args.players }, (_, i) => i % 2) } : {}),
     };
@@ -116,7 +120,7 @@ async function main() {
   const metricSum: Record<string, number> = {};
   const rankOfFinish: number[] = [];
   const byGoal = new Map<string, number[]>();
-  const lifeStat = { partner: 0, home: 0, child: 0, career: 0, grand: 0, n: 0 };
+  const lifeStat = { hasHouse: 0, villa: 0, partner: 0, home: 0, child: 0, career: 0, grand: 0, n: 0 };
 
   for (const { res, game } of results) {
     const w = res.winner;
@@ -136,6 +140,8 @@ async function main() {
       for (const k of ['asset', 'happy', 'network', 'growth'] as const) stats[k].push(p.stats[k]);
       lifeStat.n++;
       if (p.life.partner) lifeStat.partner++;
+      if (p.life.house) lifeStat.hasHouse++;
+      if (p.life.villa) lifeStat.villa++;
       if (p.life.home) lifeStat.home++;
       if (p.life.children > 0) lifeStat.child++;
       if (p.life.career) lifeStat.career++;
@@ -171,7 +177,7 @@ async function main() {
   line(`  1·2위 동점 ${pct(ties / N)}`);
   line(`  평균 최종 스탯: 자산 ${f1(mean(stats.asset))} · 행복 ${f1(mean(stats.happy))} · 인맥 ${f1(mean(stats.network))} · 성장 ${f1(mean(stats.growth))}`);
   line();
-  line(`■ 인생 상태 (최종, 시작 상태 포함)  동반자 ${pct(lifeStat.partner / lifeStat.n)} · 내 집 ${pct(lifeStat.home / lifeStat.n)} · 자녀 ${pct(lifeStat.child / lifeStat.n)} · 직업 ${pct(lifeStat.career / lifeStat.n)} · 손주 ${pct(lifeStat.grand / lifeStat.n)}`);
+  line(`■ 인생 상태 (최종, 시작 상태 포함)  집 ${pct(lifeStat.hasHouse / lifeStat.n)} · 별장 ${pct(lifeStat.villa / lifeStat.n)} · 동반자 ${pct(lifeStat.partner / lifeStat.n)} · 내 집 ${pct(lifeStat.home / lifeStat.n)} · 자녀 ${pct(lifeStat.child / lifeStat.n)} · 직업 ${pct(lifeStat.career / lifeStat.n)} · 손주 ${pct(lifeStat.grand / lifeStat.n)}`);
   line();
   line('■ 목표 종류별 평균 달성률 (균형 점검용)');
   for (const [k, v] of [...byGoal.entries()].sort()) line(`  ${k.padEnd(24)} ${pct(mean(v))}   (등장 ${v.length / P}회)`);
@@ -196,7 +202,7 @@ async function main() {
   line(`  방해 ${per('sabotages')} · 정상 바람 ${per('winds')} · 후발 CP 지급 ${per('catchUpCp')} · 마일스톤 보너스 ${per('milestoneBonus')}`);
   line();
   line('■ 칸 도착 횟수 (게임당)');
-  line('  ' + ['journey', 'activity', 'trouble', 'camp', 'path', 'lodge', 'weather', 'milestone'].map((t) => `${t} ${per('tile:' + t)}`).join(' · '));
+  line('  ' + ['journey', 'activity', 'trouble', 'camp', 'path', 'lodge', 'estate', 'weather', 'milestone'].map((t) => `${t} ${per('tile:' + t)}`).join(' · '));
   if (args.teams) {
     const tw = new Map<number, number>();
     for (const { res } of results) tw.set(res.winningTeam!, (tw.get(res.winningTeam!) ?? 0) + 1);

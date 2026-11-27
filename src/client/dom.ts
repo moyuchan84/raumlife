@@ -59,7 +59,9 @@ export function lifeText(l: LifeState): string {
   if (l.career) parts.push(`💼${l.career}(월급 ${salaryOf(l)})`);
   if (l.partner) parts.push('💞');
   if (l.children) parts.push(`👶×${l.children}`);
-  if (l.home) parts.push('🏠');
+  if (l.house) parts.push(`🏠${l.house.name}`);
+  else if (l.home) parts.push('🏠');
+  if (l.villa) parts.push(`🏝️${l.villa.name}`);
   if (l.grandchildren) parts.push(`🧒×${l.grandchildren}`);
   return parts.length ? parts.join(' ') : '아직 없음';
 }

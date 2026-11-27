@@ -39,7 +39,7 @@ export const ZONES: ZoneInfo[] = [
 
 /** 진로 선택지의 효과 원형 (이름은 구간별로 다르지만 효과 구조는 같다) */
 export const PATH_ARCHETYPES: { asset?: number; happy?: number; network?: number; growth?: number }[] = [
-  { growth: 3, asset: 1 },
-  { asset: 3, growth: 1 },
-  { network: 3, happy: 1 },
+  { growth: 2 },
+  { asset: 2 },
+  { network: 1, happy: 1 },
 ];

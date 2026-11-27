@@ -62,7 +62,7 @@ const JOURNEY: JourneyCard[] = [
   lc({ children: 1 }, c(6, '육아와 일의 균형', { happy: 1, network: 1 }, 2, 4, { happy: 3, network: 2, growth: 1 }, { stamina: -1 })),
   c(6, '동네 모임 총무', { network: 2 }, 1, 3, { network: 3, asset: 1, happy: 1 }, { happy: -1 }),
   lc({ partner: true, childrenLt: 2 }, c(6, '가정을 꾸릴 기회', { asset: 1 }, 1, 3, { happy: 3, network: 1, life: { children: 1 } }, { stamina: -1 })),
-  lc({ noHome: true, minAsset: 2 }, c(6, '내 집 마련 대출', { asset: 1 }, 1, 4, { happy: 2, asset: -1, life: { home: true } }, { asset: -1 })),
+  lc({ noHome: true }, c(6, '집 보러 다니기', { growth: 1 }, 1, 4, { growth: 2, asset: 1 }, { stamina: -1 })),
   lc({ children: 1 }, c(6, '학부모 상담', { network: 1 }, 1, 4, { happy: 2, network: 2 }, { stamina: -1 })),
   lc({ career: true }, c(6, '이직 제안', { asset: 1 }, 1, 4, { growth: 1, asset: 2, life: { raise: 1 } }, { growth: 1 })),
   c(6, '직장 회식', { network: 1 }, 1, 3, { network: 3, stamina: -1 }, {}),

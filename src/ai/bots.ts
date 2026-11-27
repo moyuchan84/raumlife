@@ -1,5 +1,5 @@
-import type { Board, Controller, Effect, GameState, JobChoice, JourneyCard, MilestoneChoice, PlayerState } from '../engine';
-import { distancesToSummit, LODGE_COST, LODGE_EFFECT, PATH_ARCHETYPES, Rng, STAT_KEYS, goalCompletion } from '../engine';
+import type { Board, Controller, Effect, GameState, HouseAnswer, HouseOffer, JobChoice, JourneyCard, MilestoneChoice, PlayerState } from '../engine';
+import { BUILD_EXTRAS, BUILD_SIZES, HOUSE_STYLES, VILLAS, validAnswer, distancesToSummit, LODGE_COST, LODGE_EFFECT, PATH_ARCHETYPES, Rng, STAT_KEYS, goalCompletion } from '../engine';
 
 // ───────── 평가 함수 ─────────
 
@@ -171,6 +171,31 @@ export class HeuristicBot implements Controller {
     return best;
   }
 
+  chooseHouse(s: GameState, me: number, offer: HouseOffer): HouseAnswer | null {
+    const p = s.players[me]!;
+    const zone = s.board.tiles[p.pos]!.zone;
+    const remaining = Math.max(0, s.config.endZone - zone); // 앞으로 받을 이정표 이득의 횟수
+    const base = valueAfter(s, me, {});
+    let best: { a: HouseAnswer; v: number } | null = null;
+    const consider = (a: HouseAnswer) => {
+      const q = validAnswer(a, offer);
+      if (!q) return;
+      const villa = a.kind === 'villa';
+      const dividend = (villa ? 2.5 : 1.5 + (q.spec.extras.includes('solar') ? 1.5 : 0)) * remaining;
+      const v = valueAfter(s, me, villa ? q.effect : { ...q.effect, life: { home: true } }) + (villa ? 5 : 0) + dividend;
+      if (v > base + 0.5 && (!best || v > best.v)) best = { a, v };
+    };
+    for (const h of offer.ready) consider({ kind: 'ready', id: h.id });
+    for (const v of offer.villas) consider({ kind: 'villa', id: v.id });
+    for (const sz of BUILD_SIZES) {
+      for (let mask = 0; mask < 1 << BUILD_EXTRAS.length; mask++) {
+        const extras = BUILD_EXTRAS.filter((_, i) => mask & (1 << i)).map((e) => e.id);
+        consider({ kind: 'custom', size: sz.size, style: (p.id + mask) % HOUSE_STYLES.length, color: (p.id * 2 + sz.size) % 8, extras });
+      }
+    }
+    return best ? (best as { a: HouseAnswer; v: number }).a : null;
+  }
+
   chooseJob(_s: GameState, _me: number, options: JobChoice[]): number {
     // 월급이 가장 높은 직업 (같으면 보람 있는 쪽)
     let best = -1;
@@ -259,6 +284,12 @@ export class RandomBot implements Controller {
   choosePathOption(_s: GameState, _me: number, _zone: number, available: boolean[]): number {
     const idx = available.map((a, i) => (a ? i : -1)).filter((i) => i >= 0);
     return idx.length ? idx[this.rng.int(idx.length)]! : -1;
+  }
+  chooseHouse(_s: GameState, _me: number, offer: HouseOffer): HouseAnswer | null {
+    const ok = offer.ready.filter((h) => h.affordable);
+    if (offer.canBuyHome && ok.length && this.rng.next() < 0.6) return { kind: 'ready', id: ok[this.rng.int(ok.length)]!.id };
+    if (offer.canBuyVilla && this.rng.next() < 0.4) return { kind: 'villa', id: VILLAS[0]!.id };
+    return null;
   }
   chooseJob(_s: GameState, _me: number, options: JobChoice[]): number {
     const idx = options.map((o, i) => (o.enabled ? i : -1)).filter((i) => i >= 0);

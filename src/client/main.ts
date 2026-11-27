@@ -18,6 +18,7 @@ import { DEFAULT_AVATAR, SEAT_COLORS, sanitizeAvatar, type Avatar } from '../sha
 import { avatarImage } from './avatar2d';
 import { createCreator } from './creator';
 import { createBoard3D, type Board3D } from './board3d';
+import { buildHouseAsk } from './house';
 
 // ───────── 앱 상태 ─────────
 const store = {
@@ -233,6 +234,7 @@ function viewHome(): HTMLElement {
       h('b', null, '규칙 한눈에'),
       h('ul', { style: { margin: '6px 0 0', paddingLeft: '18px' } },
         h('li', null, '주사위 2개 중 하나로 이동하고, 안 쓴 눈이 4 이상이면 ✨기회 포인트를 얻어요.'),
+        h('li', null, '성인이 되면 🏘️부동산 칸에서 원래 있는 집을 사거나 직접 지을 수 있고, 돈이 많으면 별장도 살 수 있어요. 지은 집은 섬에 실제로 세워져요.'),
         h('li', null, '칸마다 카드를 뽑아 안전하게 갈지 도전할지 고릅니다. 🏄 액티비티는 보상이 크고, ⚠️ 트러블은 맞서야 피할 수 있어요.'),
         h('li', null, '섬마다 해안길(안전하지만 길다)과 지름길(섬을 가로지르지만 도전만 가능)이 갈라집니다.'),
         h('li', null, '모두에게 공개된 목표(자산·행복·인맥·성장 등)의 달성률이 가장 높은 사람이 승리!'),
@@ -250,6 +252,15 @@ const PRESETS = [
   { label: '🍂 노년 코스', sub: '노년 초반~끝', s: 8, e: 10 },
   { label: '🌏 전 생애', sub: '갓난아기~노년 끝', s: 1, e: 10 },
 ];
+/** 여행 길이: 섬 하나의 칸 수(해안길)가 늘어난다 */
+const LENGTHS: { id: 1 | 2 | 3; label: string; tiles: (zones: number) => string }[] = [
+  { id: 1, label: '보통', tiles: (z) => `약 ${approxTiles(z, 1)}칸` },
+  { id: 2, label: '길게', tiles: (z) => `약 ${approxTiles(z, 1.5)}칸` },
+  { id: 3, label: '아주 길게', tiles: (z) => `약 ${approxTiles(z, 2)}칸` },
+];
+function approxTiles(zones: number, factor: number): number {
+  return Math.round(zones * 14.8 * factor);
+}
 const DIFFS: { id: RoomSettings['difficulty']; label: string }[] = [
   { id: 'easy', label: '쉬움 (목표 1개)' },
   { id: 'normal', label: '보통 (목표 2개)' },
@@ -265,7 +276,8 @@ function viewLobby(l: LobbyState): HTMLElement {
   const st = l.settings;
   const set = (patch: Partial<RoomSettings>) => net.send({ t: 'settings', settings: patch });
   const zones = st.endZone - st.startZone + 1;
-  const estMin = Math.round((2.7 * zones * l.seats.length * 20) / 60);
+  const lenFactor = [1, 1.4, 1.8][st.length - 1] ?? 1;
+  const estMin = Math.round((2.7 * zones * lenFactor * l.seats.length * 20) / 60);
 
   const zoneSel = (value: number, onchange: (v: number) => void) =>
     h('select', { disabled: !amHost, onchange: (e: Event) => onchange(Number((e.target as HTMLSelectElement).value)) },
@@ -319,6 +331,9 @@ function viewLobby(l: LobbyState): HTMLElement {
         h('span', { class: 'muted' }, '시작'), zoneSel(st.startZone, (v) => set({ startZone: v })),
         h('span', { class: 'muted' }, '끝'), zoneSel(st.endZone, (v) => set({ endZone: v })),
       ),
+      h('div', { class: 'row', style: { marginTop: '10px' } },
+        h('span', { class: 'muted' }, '여행 길이'),
+        ...LENGTHS.map((o) => h('button', { class: `chip small ${st.length === o.id ? 'on' : ''}`, disabled: !amHost, onclick: () => set({ length: o.id }) }, `${o.label} ${o.tiles(zones)}`))),
       h('div', { class: 'muted', style: { marginTop: '8px' } }, `${zones}개 구간 · 예상 ${estMin}분 (한 번 결정에 20초 가정)`),
     ),
     h('div', { class: 'card' },
@@ -516,6 +531,10 @@ function updateGame() {
   const info = S.info;
   const meP = st.players[st.me]!;
   G.v3?.update(st.players, st.current, st.me);
+  G.v3?.setHouses(st.players.flatMap((p) => [
+    ...(p.life.house ? [{ key: `${p.id}:house`, spec: p.life.house, color: SEAT_COLORS[p.id % SEAT_COLORS.length]!, slot: p.id }] : []),
+    ...(p.life.villa ? [{ key: `${p.id}:villa`, spec: p.life.villa, color: SEAT_COLORS[p.id % SEAT_COLORS.length]!, slot: p.id }] : []),
+  ]));
 
   // 상단 바
   clear(G.topbar);
@@ -574,7 +593,7 @@ function renderLegend(pos: number) {
   const z = ZONES[zone - 1]!;
   const mine = tiles.filter((t) => t.zone === zone && t.route !== 'short' && t.type !== 'fork');
   const counts = new Map<string, { icon: string; name: string; total: number; ahead: number }>();
-  const order = ['trouble', 'activity', 'journey', 'camp', 'path', 'lodge', 'weather', 'milestone', 'summit'];
+  const order = ['trouble', 'activity', 'journey', 'camp', 'estate', 'lodge', 'weather', 'milestone', 'summit'];
   for (const t of mine) {
     const e = counts.get(t.type) ?? { icon: tileIcon(t.type, zone), name: TILE_NAME[t.type], total: 0, ahead: 0 };
     e.total++;
@@ -663,6 +682,12 @@ function onEvent(e: GameEvent) {
       toast([h('h4', null, `🎂 ${who(e.player)}의 새로운 나이`), h('div', null, `${z.name} (${z.ages}세) · ${z.island}`), h('div', { class: 'fx' }, `체력 한계 💪${S.state.players[e.player]?.staminaCap ?? ''}`)], 'good', 2400);
       addLog(`${who(e.player)} ${z.island} 도착 — ${z.name} (${z.ages}세)`, true);
       G.v3?.celebrate(e.player, label);
+      break;
+    }
+    case 'house': {
+      const sp = e.spec;
+      toast([h('h4', null, sp.kind === 'villa' ? `🏝️ ${who(e.player)}의 별장` : sp.kind === 'custom' ? `🏠 ${who(e.player)}가 집을 지었어요` : `🏠 ${who(e.player)}가 집을 샀어요`), h('div', null, sp.name), h('div', { class: 'fx' }, fmtEffect(e.effect))], 'good', 3000);
+      addLog(`${who(e.player)} ${sp.kind === 'villa' ? '별장' : sp.kind === 'custom' ? '집을 직접 지었어요' : '집을 샀어요'}: ${sp.name} ${fmtEffect(e.effect)}`, true);
       break;
     }
     case 'job': {
@@ -810,6 +835,11 @@ function renderAsk() {
       opts.append(opt('선택하지 않음', '', () => answer(-1)));
       break;
     }
+    case 'house': {
+      box.classList.add('wide');
+      box.append(buildHouseAsk(a.offer, a.onlyHome, (ans) => answer(ans)));
+      break;
+    }
     case 'job': {
       box.append(h('h4', null, '💼 어른이 되었어요! 직업을 정해요'), h('div', { class: 'sub' }, `정해진 직업으로 섬을 옮길 때마다 월급을 받고, 은퇴 후에는 월급의 절반이 연금이에요. 학력이 높을수록(🌱성장, 지금 ${a.growth}) 좋은 직업을 고를 수 있어요.`));
       a.options.forEach((o, i) => {
@@ -836,7 +866,8 @@ function renderAsk() {
       break;
     }
   }
-  box.append(opts, h('div', { class: 'timer' }, h('i', { id: 'ask-timer' })));
+  if (opts.childElementCount) box.append(opts);
+  box.append(h('div', { class: 'timer' }, h('i', { id: 'ask-timer' })));
   G.askbar.append(box);
 }
 

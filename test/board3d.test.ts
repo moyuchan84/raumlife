@@ -3,9 +3,9 @@ import { buildBoard } from '../src/engine';
 import { layout3d } from '../src/client/board3d';
 
 describe('3D 섬 배치', () => {
-  for (const [a, b] of [[1, 3], [3, 5], [5, 7], [8, 10], [1, 10], [4, 4]] as const) {
-    it(`코스 ${a}~${b}: 좌표가 유효하고 칸이 겹치지 않으며 길이 이어진다`, () => {
-      const board = buildBoard(a, b);
+  for (const [a, b, L] of [[1, 3, 1], [3, 5, 1], [5, 7, 1], [8, 10, 1], [1, 10, 1], [4, 4, 1], [1, 10, 2], [1, 10, 3], [5, 6, 3]] as const) {
+    it(`코스 ${a}~${b} (길이 ${L}): 좌표가 유효하고 칸이 겹치지 않으며 길이 이어진다`, () => {
+      const board = buildBoard(a, b, L);
       const { pos, islands, bridges } = layout3d(board.tiles, a, b);
       expect(islands).toHaveLength(b - a + 1);
       expect(bridges).toHaveLength(b - a);
@@ -21,7 +21,7 @@ describe('3D 섬 배치', () => {
       for (const t of board.tiles) {
         for (const nx of t.next) {
           if (board.tiles[nx]!.zone !== t.zone) continue;
-          expect(pos[t.id]!.distanceTo(pos[nx]!)).toBeLessThan(8);
+          expect(pos[t.id]!.distanceTo(pos[nx]!)).toBeLessThan(9);
         }
       }
       // 모든 칸이 자기 섬 안(해안 안쪽)에 있다

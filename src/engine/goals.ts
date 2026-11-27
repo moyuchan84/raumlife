@@ -50,7 +50,8 @@ export function generateGoals(config: GameConfig, tuning: Tuning, rng: Rng): Goa
   const statPool = rng.shuffle(STAT_KEYS);
   for (let i = 0; i < stats; i++) {
     const stat = statPool[i]!;
-    const target = Math.round(START_STATS[stat] + zones * tuning.perZoneGain * coef * tuning.statWeight[stat]);
+    const lenGain = tuning.lengthGain[(config.length ?? 1) - 1] ?? 1;
+    const target = Math.round(START_STATS[stat] + zones * tuning.perZoneGain * coef * tuning.statWeight[stat] * lenGain);
     goals.push({ kind: 'stat', stat, target });
   }
   const condPool = rng.shuffle(CONDITIONS.filter((c) => c.minZones <= zones && (!c.when || c.when(config))));
