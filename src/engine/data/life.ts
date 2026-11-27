@@ -1,13 +1,18 @@
 import type { Effect, LifeState, Req } from '../types';
 
 export function emptyLife(): LifeState {
-  return { career: null, partner: false, children: 0, grandchildren: 0, home: false };
+  return { career: null, jobId: null, raise: 0, jobAsked: false, partner: false, children: 0, grandchildren: 0, home: false };
 }
 
 /** 중간 구간에서 시작하는 코스를 위한 표준 인생 상태 (앞 구간의 기록을 대신한다) */
 export function startLife(startZone: number): LifeState {
   const l = emptyLife();
-  if (startZone >= 5) l.career = '회사원';
+  // 이미 은퇴한 나이에서 시작하면 직장생활을 마친 상태(연금 수령)
+  if (startZone >= 8) {
+    l.career = '회사원';
+    l.jobId = 'office';
+    l.jobAsked = true;
+  }
   if (startZone >= 6) l.partner = true;
   if (startZone >= 7) {
     l.children = 1;
@@ -88,7 +93,7 @@ export const MILESTONES: Record<number, MilestoneInfo> = {
     title: '중학교 졸업 — 진로를 정해요',
     options: [
       { id: 'academic', name: '일반 고등학교 진학', desc: '대학을 목표로', effect: { growth: 3 } },
-      { id: 'tech', name: '기술을 배우는 학교', desc: '일찍 기술을 익혀요', effect: { growth: 2, asset: 1, life: { career: '기술 수련생' } } },
+      { id: 'tech', name: '기술을 배우는 학교', desc: '일찍 기술을 익혀요', effect: { growth: 2, asset: 1 } },
       { id: 'dream', name: '꿈을 찾아 떠나는 여행', desc: '시간을 갖고 고민해요', effect: { happy: 3, network: 1 } },
     ],
   },
@@ -96,8 +101,8 @@ export const MILESTONES: Record<number, MilestoneInfo> = {
     title: '고등학교 졸업 — 대학이냐, 취업이냐',
     options: [
       { id: 'univ', name: '대학 진학', desc: '배움을 더 깊이', effect: { growth: 3, asset: -1 } },
-      { id: 'job', name: '바로 취업', desc: '일찍 사회로', effect: { asset: 2, growth: 1, life: { career: '회사원' } } },
-      { id: 'startup', name: '창업·프리랜서에 도전', desc: '성공하면 크지만 운이 필요해요', effect: { asset: 3, growth: 1, life: { career: '창업가' } }, dc: 4, fail: { asset: -1, growth: 1 } },
+      { id: 'job', name: '바로 취업 준비', desc: '일찍 사회로 (용돈벌이)', effect: { asset: 2, growth: 1 } },
+      { id: 'startup', name: '창업·프리랜서에 도전', desc: '성공하면 크지만 운이 필요해요', effect: { asset: 3, growth: 1 }, dc: 4, fail: { asset: -1, growth: 1 } },
     ],
   },
   5: {
@@ -114,7 +119,7 @@ export const MILESTONES: Record<number, MilestoneInfo> = {
     options: [
       { id: 'home', name: '내 집 마련', desc: '대출을 받아 보금자리를 사요 (💰2 필요)', effect: { asset: -2, happy: 2, life: { home: true } }, requires: { noHome: true, minAsset: 2 } },
       { id: 'child', name: '아이를 맞이하기', desc: '가정을 꾸려요 (주사위)', effect: { happy: 3, asset: -1, life: { children: 1 } }, dc: 3, fail: { happy: 1 }, requires: { partner: true, childrenLt: 2 } },
-      { id: 'promo', name: '승진·이직에 도전', desc: '더 높은 곳으로 (주사위)', effect: { asset: 3, growth: 1, life: { career: '관리자' } }, dc: 3, fail: { growth: 1 }, requires: { career: true } },
+      { id: 'promo', name: '승진·이직에 도전', desc: '연봉이 오르면 월급이 +1 (주사위)', effect: { growth: 1, life: { raise: 1 } }, dc: 3, fail: { growth: 1 }, requires: { career: true } },
       { id: 'family', name: '가족과 보내는 시간', desc: '쉬며 재충전', effect: { happy: 2, network: 1, stamina: 2 } },
     ],
   },

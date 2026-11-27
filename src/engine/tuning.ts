@@ -2,8 +2,9 @@ import type { Tuning } from './types';
 
 /** 초기 튜닝값. 시뮬레이터 결과를 보고 조정한다. */
 export const DEFAULT_TUNING: Tuning = {
-  perZoneGain: 3.0,
+  perZoneGain: 3.3,
   difficultyCoef: { easy: 1, normal: 1, hard: 1, extreme: 1.4 },
+  statWeight: { asset: 1.3, happy: 1, network: 0.95, growth: 0.85 },
   startStamina: 8,
   maxStamina: 10,
   maxCp: 5,

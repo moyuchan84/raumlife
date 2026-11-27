@@ -1,5 +1,16 @@
 import type { Effect, GameState, JourneyCard } from './types';
 
+/** 직업 선택지 (학력(성장)이 모자라면 enabled=false) */
+export interface JobChoice {
+  id: string;
+  name: string;
+  icon: string;
+  salary: number;
+  minGrowth: number;
+  perkText: string;
+  enabled: boolean;
+}
+
 /** 이정표 선택지 (조건을 못 맞추면 enabled=false) */
 export interface MilestoneChoice {
   id: string;
@@ -32,6 +43,8 @@ export interface Controller {
   wantReroll(s: GameState, me: number, card: JourneyCard, roll: number): Maybe<boolean>;
   /** 진로 칸: 선택지 인덱스 (자리가 없으면 available[i]=false). -1 이면 선택 안 함 */
   choosePathOption(s: GameState, me: number, zone: number, available: boolean[]): Maybe<number>;
+  /** 성인이 되었을 때 직업을 정한다 (enabled 인 것만 가능) */
+  chooseJob(s: GameState, me: number, options: JobChoice[]): Maybe<number>;
   /** 구간 끝 이정표: 인생의 갈림길 선택 (enabled 인 것만 고를 수 있다) */
   chooseMilestone(s: GameState, me: number, zone: number, title: string, options: MilestoneChoice[]): Maybe<number>;
   /** 보금자리를 살지 */

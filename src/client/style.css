@@ -171,3 +171,9 @@ input, select {
 .pl .tk img { display: block; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 @media (max-width: 560px) { .creator { grid-template-columns: 1fr; } }
+
+/* ── 섬의 칸 안내 ── */
+.legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 10px; }
+.lg { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.lg .lgi { font-size: 18px; width: 24px; text-align: center; }
+.lg b { margin-left: auto; font-variant-numeric: tabular-nums; }

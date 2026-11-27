@@ -16,6 +16,23 @@ export const TILE_ICON: Record<TileType, string> = {
   milestone: '🚩',
   summit: '🗼',
 };
+/** 아기 섬(1)은 기호를 단순한 얼굴·모양으로 바꿔 알아보기 쉽게 한다 */
+const BABY_ICON: Record<TileType, string> = {
+  journey: '⭐',
+  activity: '😄',
+  trouble: '😢',
+  camp: '🛏️',
+  path: '⭐',
+  lodge: '🧸',
+  fork: '🔀',
+  weather: '☁️',
+  milestone: '🎀',
+  summit: '🗼',
+};
+export function tileIcon(type: TileType, zone: number): string {
+  return zone === 1 ? BABY_ICON[type] : TILE_ICON[type];
+}
+
 export const TILE_NAME: Record<TileType, string> = {
   journey: '여정',
   activity: '액티비티',
@@ -181,7 +198,7 @@ export function draw(ctx: CanvasRenderingContext2D, o: DrawOptions) {
     ctx.stroke();
     ctx.font = '17px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
     ctx.fillStyle = '#000';
-    ctx.fillText(TILE_ICON[t.type], p.x, p.y + 1);
+    ctx.fillText(tileIcon(t.type, t.zone), p.x, p.y + 1);
     if (o.highlight === t.id) {
       ctx.beginPath();
       ctx.arc(p.x, p.y, R + 5, 0, Math.PI * 2);

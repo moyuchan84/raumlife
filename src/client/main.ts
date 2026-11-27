@@ -11,7 +11,7 @@ import {
   type StateView,
 } from '../shared/protocol';
 import { clear, fmtEffect, h, lifeText, pct } from './dom';
-import { draw, layoutBoard, TILE_NAME, type Layout, type Pt } from './board';
+import { draw, layoutBoard, tileIcon, TILE_NAME, type Layout, type Pt } from './board';
 import { Net } from './net';
 import { LocalNet } from './local';
 import { DEFAULT_AVATAR, SEAT_COLORS, sanitizeAvatar, type Avatar } from '../shared/avatar';
@@ -349,6 +349,7 @@ interface GameUI {
   scroll: HTMLElement;
   topbar: HTMLElement;
   goalsEl: HTMLElement;
+  legendEl: HTMLElement;
   playersEl: HTMLElement;
   logEl: HTMLElement;
   overlay: HTMLElement;
@@ -382,15 +383,16 @@ function buildGame() {
   const overlay = h('div', { class: 'overlay' });
   const askbar = h('div', { class: 'askbar' });
   const goalsEl = h('section');
+  const legendEl = h('section');
   const playersEl = h('section');
   const logEl = h('div', { class: 'log' });
   const root = h('div', { class: 'game' },
     h('div', { class: 'stage-wrap' }, topbar, scroll, three, overlay, askbar),
-    h('div', { class: 'side' }, goalsEl, playersEl, h('section', null, h('h3', null, '진행 기록'), logEl)),
+    h('div', { class: 'side' }, goalsEl, legendEl, playersEl, h('section', null, h('h3', null, '진행 기록'), logEl)),
   );
   clear(app);
   app.append(root);
-  G = { root, canvas, ctx, layout, scroll, topbar, goalsEl, playersEl, logEl, overlay, askbar, anims: new Map(), tokenPos: new Map(), floats: [], raf: 0, diceEl: null, lastTurn: -1, three, v3: null, mode: '2d' };
+  G = { root, canvas, ctx, layout, scroll, topbar, goalsEl, legendEl, playersEl, logEl, overlay, askbar, anims: new Map(), tokenPos: new Map(), floats: [], raf: 0, diceEl: null, lastTurn: -1, three, v3: null, mode: '2d' };
   // 처음엔 내 말이 있는 곳(맨 아래)으로
   requestAnimationFrame(() => (scroll.scrollTop = scroll.scrollHeight));
   const loop = (now: number) => {
@@ -540,6 +542,9 @@ function updateGame() {
   const goalAvg = avg(meP.completion);
   G.goalsEl.append(h('div', { class: 'muted', style: { fontSize: '13px' } }, `내 달성률 평균 ${pct(goalAvg)}`));
 
+  // 이 섬의 칸 (종류별 개수와 앞으로 남은 칸)
+  renderLegend(meP.pos);
+
   // 플레이어
   clear(G.playersEl);
   G.playersEl.append(h('h3', null, '플레이어'));
@@ -559,6 +564,33 @@ function updateGame() {
   }
   G.playersEl.append(list);
   G.playersEl.append(h('div', { class: 'muted', style: { fontSize: '12px', marginTop: '6px' } }, info.teams ? '팀원과 내 수치만 정확히 보입니다. 상대는 10% 단위.' : '상대의 달성률은 10% 단위로만 보입니다.'));
+}
+
+/** 지금 있는 섬에 어떤 칸이 몇 개 있는지 (해안길 기준), 앞으로 남은 칸 수 */
+function renderLegend(pos: number) {
+  if (!G || !S.info) return;
+  const tiles = S.info.board.tiles;
+  const zone = tiles[pos]!.zone;
+  const z = ZONES[zone - 1]!;
+  const mine = tiles.filter((t) => t.zone === zone && t.route !== 'short' && t.type !== 'fork');
+  const counts = new Map<string, { icon: string; name: string; total: number; ahead: number }>();
+  const order = ['trouble', 'activity', 'journey', 'camp', 'path', 'lodge', 'weather', 'milestone', 'summit'];
+  for (const t of mine) {
+    const e = counts.get(t.type) ?? { icon: tileIcon(t.type, zone), name: TILE_NAME[t.type], total: 0, ahead: 0 };
+    e.total++;
+    if (t.id > pos) e.ahead++;
+    counts.set(t.type, e);
+  }
+  clear(G.legendEl);
+  G.legendEl.append(
+    h('h3', null, `${z.island}의 칸 (해안길 기준)`),
+    h('div', { class: 'legend' }, order.filter((k) => counts.has(k)).map((k) => {
+      const e = counts.get(k)!;
+      return h('div', { class: 'lg', title: `${e.name}: 전체 ${e.total}칸, 앞으로 ${e.ahead}칸` },
+        h('span', { class: 'lgi' }, e.icon), h('span', null, e.name), h('b', null, `${e.ahead}/${e.total}`));
+    })),
+    h('div', { class: 'muted', style: { fontSize: '12px', marginTop: '4px' } }, '앞으로 남은 칸 / 전체 칸'),
+  );
 }
 
 function addLog(text: string, hi = false) {
@@ -631,6 +663,16 @@ function onEvent(e: GameEvent) {
       toast([h('h4', null, `🎂 ${who(e.player)}의 새로운 나이`), h('div', null, `${z.name} (${z.ages}세) · ${z.island}`), h('div', { class: 'fx' }, `체력 한계 💪${S.state.players[e.player]?.staminaCap ?? ''}`)], 'good', 2400);
       addLog(`${who(e.player)} ${z.island} 도착 — ${z.name} (${z.ages}세)`, true);
       G.v3?.celebrate(e.player, label);
+      break;
+    }
+    case 'job': {
+      toast([h('h4', null, `💼 ${who(e.player)}의 직업`), h('div', null, e.job), h('div', { class: 'fx' }, `월급 💰${e.salary} (섬을 옮길 때마다)`)], 'good', 2800);
+      addLog(`${who(e.player)} 직업을 정했어요: ${e.job} (월급 ${e.salary})`, true);
+      break;
+    }
+    case 'payday': {
+      toast([h('h4', null, e.pension ? '🧓 연금 받는 날' : '💰 월급날!'), h('div', null, `${who(e.player)} · ${e.job}`), h('div', { class: 'fx' }, fmtEffect(e.effect))], 'good', 2200);
+      addLog(`${who(e.player)} ${e.pension ? '연금' : '월급'} ${fmtEffect(e.effect)}`, e.player === S.state.me);
       break;
     }
     case 'milestone': {
@@ -766,6 +808,13 @@ function renderAsk() {
       box.append(h('h4', null, `🪧 진로 선택 — ${ZONES[a.zone - 1]!.name}`), h('div', { class: 'sub' }, '자리가 한정되어 있어요. 먼저 고른 사람이 차지합니다.'));
       a.names.forEach((n, i) => opts.append(opt(n, `${fmtEffect(a.effects[i]!)}${a.available[i] ? '' : ' · 마감'}`, () => answer(i), !a.available[i], true)));
       opts.append(opt('선택하지 않음', '', () => answer(-1)));
+      break;
+    }
+    case 'job': {
+      box.append(h('h4', null, '💼 어른이 되었어요! 직업을 정해요'), h('div', { class: 'sub' }, `정해진 직업으로 섬을 옮길 때마다 월급을 받고, 은퇴 후에는 월급의 절반이 연금이에요. 학력이 높을수록(🌱성장, 지금 ${a.growth}) 좋은 직업을 고를 수 있어요.`));
+      a.options.forEach((o, i) => {
+        opts.append(opt(`${o.icon} ${o.name}`, o.enabled ? `월급 💰${o.salary} · ${o.perkText}${o.minGrowth ? ` (🌱${o.minGrowth} 필요)` : ''}` : `🌱성장 ${o.minGrowth}이 필요해요 (월급 💰${o.salary})`, () => answer(i), !o.enabled, o.enabled));
+      });
       break;
     }
     case 'milestone': {

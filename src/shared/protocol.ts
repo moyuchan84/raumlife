@@ -1,4 +1,4 @@
-import type { CardDeck, Difficulty, Effect, GameEvent, GameResult, JourneyCard, LifeState, MilestoneChoice, StatKey, Tile } from '../engine';
+import type { CardDeck, Difficulty, Effect, GameEvent, GameResult, JourneyCard, JobChoice, LifeState, MilestoneChoice, StatKey, Tile } from '../engine';
 import type { Avatar } from './avatar';
 
 export const BOT_KINDS = [
@@ -94,6 +94,7 @@ export type Ask =
   | { kind: 'boost'; card: JourneyCard; cp: number }
   | { kind: 'reroll'; card: JourneyCard; roll: number; cost: number }
   | { kind: 'pathOption'; zone: number; names: string[]; effects: Effect[]; available: boolean[] }
+  | { kind: 'job'; options: JobChoice[]; growth: number }
   | { kind: 'milestone'; zone: number; title: string; options: MilestoneChoice[]; life: LifeState; asset: number }
   | { kind: 'lodge'; cost: number; effect: Effect; asset: number }
   | { kind: 'sabotage'; targets: number[]; free: boolean; cost: number; cp: number };

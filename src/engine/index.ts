@@ -10,3 +10,5 @@ export { CARDS, ACTIVITY_CARDS, TROUBLE_CARDS, DECKS } from './data/cards';
 export { WEATHER } from './data/weather';
 export { MILESTONES, startLife, emptyLife, meets, reqText, staminaCapFor } from './data/life';
 export type { MilestoneOption } from './data/life';
+export { JOBS, JOB_BY_ID, salaryOf, pensionOf, jobOffer } from './data/jobs';
+export type { Job } from './data/jobs';

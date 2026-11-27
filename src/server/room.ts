@@ -358,6 +358,8 @@ function eventDelay(e: GameEvent): number {
     case 'weather': return 1700;
     case 'zoneEnter': return 2200; // 나이가 드는 연출
     case 'milestone': return 2600;
+    case 'payday': return 1700;
+    case 'job': return 2200;
     case 'pathOption': return 900;
     case 'lodge': return 700;
     case 'sabotage': return 1400;

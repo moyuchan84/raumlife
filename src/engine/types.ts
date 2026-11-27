@@ -9,7 +9,14 @@ export const STAT_LABEL: Record<StatKey, string> = {
 
 /** 인생 상태: 직업·동반자·자녀·집. 카드 조건과 인생 목표에 쓰인다. */
 export interface LifeState {
+  /** 직업 이름 (화면 표시용) */
   career: string | null;
+  /** 직업 종류 (월급 계산용). 성인이 되면 정하고, 섬을 옮길 때마다 월급을 받는다 */
+  jobId: string | null;
+  /** 승진·이직으로 오른 연봉 (월급에 더해진다) */
+  raise: number;
+  /** 직업 선택을 이미 물어봤는지 */
+  jobAsked: boolean;
   partner: boolean;
   children: number;
   grandchildren: number;
@@ -17,7 +24,8 @@ export interface LifeState {
 }
 /** 효과로 인한 인생 상태 변화 */
 export interface LifeChange {
-  career?: string;
+  /** 연봉 인상(승진·이직) */
+  raise?: number;
   partner?: boolean;
   children?: number; // 증가량
   grandchildren?: number; // 증가량
@@ -105,7 +113,7 @@ export type ConditionKind =
   | 'hasPartner'
   | 'hasHome'
   | 'hasChild'
-  | 'hasCareer'
+  | 'highSalary'
   | 'grandchild'
   | 'challengesWon'
   | 'pathsTaken';
@@ -130,6 +138,8 @@ export interface Tuning {
   /** 목표치 = 시작 스탯 + 구간 수 × perZoneGain × 난이도 계수 */
   perZoneGain: number;
   difficultyCoef: Record<Difficulty, number>;
+  /** 스탯마다 얻기 쉬운 정도가 달라서(월급 등) 목표치에 곱하는 보정 */
+  statWeight: Record<StatKey, number>;
   startStamina: number;
   maxStamina: number;
   maxCp: number;
@@ -230,6 +240,8 @@ export type GameEvent =
   | { t: 'diceChosen'; player: number; pick: 0 | 1; move: number; cpGain: number }
   | { t: 'move'; player: number; path: number[] }
   | { t: 'zoneEnter'; player: number; zone: number }
+  | { t: 'payday'; player: number; zone: number; job: string; amount: number; pension: boolean; effect: Effect }
+  | { t: 'job'; player: number; job: string; salary: number }
   | { t: 'milestone'; player: number; zone: number; option: string; success: boolean | null; effect: Effect }
   | { t: 'tile'; player: number; tile: number; tileType: TileType; delta: Effect }
   | { t: 'card'; player: number; deck: CardDeck; card: JourneyCard; choice: 'safe' | 'challenge'; boost: number; roll: number | null; success: boolean | null; rerolled: boolean }

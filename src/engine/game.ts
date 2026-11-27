@@ -21,7 +21,8 @@ import { DECKS } from './data/cards';
 import { WEATHER } from './data/weather';
 import { PATH_ARCHETYPES } from './data/zones';
 import { MILESTONES, meets, reqText, staminaCapFor, startLife } from './data/life';
-import type { MilestoneChoice } from './controller';
+import type { JobChoice, MilestoneChoice } from './controller';
+import { JOB_BY_ID, jobOffer, pensionOf, salaryOf } from './data/jobs';
 import { DEFAULT_TUNING } from './tuning';
 import { START_STATS, generateGoals, goalCompletion, goalOverflow } from './goals';
 
@@ -55,6 +56,7 @@ export class Game {
       ...DEFAULT_TUNING,
       ...config.tuning,
       difficultyCoef: { ...DEFAULT_TUNING.difficultyCoef, ...(config.tuning?.difficultyCoef ?? {}) },
+      statWeight: { ...DEFAULT_TUNING.statWeight, ...(config.tuning?.statWeight ?? {}) },
     };
     this.rng = new Rng(config.seed);
     const board = buildBoard(config.startZone, config.endZone);
@@ -128,7 +130,7 @@ export class Game {
     if (e.cp) p.cp = clamp(p.cp + e.cp, 0, t.maxCp);
     const l = e.life;
     if (l) {
-      if (l.career) p.life.career = l.career;
+      if (l.raise) p.life.raise = Math.min(3, p.life.raise + l.raise);
       if (l.partner) p.life.partner = true;
       if (l.children) p.life.children = Math.min(3, p.life.children + l.children);
       if (l.grandchildren) p.life.grandchildren = Math.min(3, p.life.grandchildren + l.grandchildren);
@@ -152,15 +154,22 @@ export class Game {
       this.journeyDiscard.set(key, []);
       this.journeyDecks.set(key, cards);
     }
-    // 이 플레이어의 인생 상태에 맞는 카드를 찾는다 (없으면 조건을 무시)
+    // 이 플레이어의 인생 상태에 맞는 카드를 찾는다. 덱에 맞는 카드가 없으면 이 섬의 카드 전체에서 고른다
+    const fits = (c: JourneyCard) => meets(c.requires, p.life, p.stats.asset);
     let idx = -1;
     for (let i = cards.length - 1; i >= 0; i--) {
-      if (meets(cards[i]!.requires, p.life, p.stats.asset)) {
+      if (fits(cards[i]!)) {
         idx = i;
         break;
       }
     }
-    const card = idx >= 0 ? cards.splice(idx, 1)[0]! : cards.pop()!;
+    let card: JourneyCard;
+    if (idx >= 0) {
+      card = cards.splice(idx, 1)[0]!;
+    } else {
+      const all = DECKS[deck].filter((c) => (c.zone === 0 || c.zone === zone) && fits(c));
+      card = all[this.rng.int(all.length)]!; // 조건 없는 카드가 항상 있으므로 비지 않는다
+    }
     const d = this.journeyDiscard.get(key) ?? [];
     d.push(card);
     this.journeyDiscard.set(key, d);
@@ -238,6 +247,7 @@ export class Game {
     p.track.turns++;
 
     await this.emit({ t: 'turnStart', player: idx, round: s.round });
+    await this.maybeChooseJob(p, ctrl);
     if (p.arrived) {
       await this.keeperAction(p, ctrl);
       return;
@@ -270,7 +280,10 @@ export class Game {
     const path = await this.moveAlong(p, ctrl, move);
     await this.emit({ t: 'move', player: idx, path });
     const zoneAfter = s.board.tiles[p.pos]!.zone;
-    if (zoneAfter !== zoneBefore) await this.emit({ t: 'zoneEnter', player: idx, zone: zoneAfter });
+    if (zoneAfter !== zoneBefore) {
+      await this.emit({ t: 'zoneEnter', player: idx, zone: zoneAfter });
+      await this.payday(p, zoneAfter);
+    }
     if (p.arrived) return;
 
     const before = { ...p.stats, stamina: p.stamina, cp: p.cp };
@@ -391,19 +404,47 @@ export class Game {
     }
   }
 
-  /** 인생 상태가 주는 꾸준한 이득: 이정표를 지날 때마다 받는다 (직업 월급, 가족과의 행복, 집값 등) */
+  /** 인생 상태가 주는 꾸준한 이득: 이정표를 지날 때마다 받는다 (집값, 가족과의 행복 등. 월급은 섬을 옮길 때 따로 받는다) */
   lifeDividend(p: PlayerState): Effect {
     const l = p.life;
     const e: Effect = {};
     const add = (k: 'asset' | 'happy' | 'network', n: number) => {
       e[k] = (e[k] ?? 0) + n;
     };
-    if (l.career) add('asset', 1);
     if (l.home) add('asset', 1);
     if (l.partner) add('happy', 1);
     if (l.children > 0) add('network', 1);
     if (l.grandchildren > 0) add('happy', 1);
     return e;
+  }
+
+  /** 성인이 되면(성인 초반~말기) 직업을 정한다. 라이프처럼 정해진 직업으로 월급을 받는다 */
+  private async maybeChooseJob(p: PlayerState, ctrl: Controller): Promise<void> {
+    const zone = this.state.board.tiles[p.pos]!.zone;
+    if (p.life.jobAsked || p.life.jobId || zone < 5 || zone > 7) return;
+    p.life.jobAsked = true;
+    const offer = jobOffer((n) => this.rng.int(n), p.stats.growth);
+    const choices: JobChoice[] = offer.map(({ job, enabled }) => ({ id: job.id, name: job.name, icon: job.icon, salary: job.salary, minGrowth: job.minGrowth, perkText: job.perkText, enabled }));
+    let pick = await ctrl.chooseJob(this.state, p.id, choices);
+    if (!Number.isInteger(pick) || pick < 0 || pick >= choices.length || !choices[pick]!.enabled) pick = choices.findIndex((c) => c.enabled);
+    const job = JOB_BY_ID.get(choices[pick]!.id)!;
+    p.life.jobId = job.id;
+    p.life.career = job.name;
+    this.m(`job:${job.id}`);
+    await this.emit({ t: 'job', player: p.id, job: job.name, salary: job.salary });
+  }
+
+  /** 섬을 옮길 때마다 월급(은퇴 후에는 연금)을 받는다 */
+  private async payday(p: PlayerState, zone: number): Promise<void> {
+    if (!p.life.jobId) return;
+    const pension = zone >= 8;
+    const amount = pension ? pensionOf(p.life) : salaryOf(p.life);
+    const job = JOB_BY_ID.get(p.life.jobId)!;
+    const effect: Effect = { asset: amount, ...(pension ? {} : job.perk) };
+    if (!amount) return;
+    this.applyEffect(p, effect);
+    this.m(pension ? 'pensionPaid' : 'salaryPaid', amount);
+    await this.emit({ t: 'payday', player: p.id, zone, job: job.name, amount, pension, effect });
   }
 
   /** 구간 끝에서 인생의 갈림길(진학·취업·결혼·집·은퇴…)을 고른다 */

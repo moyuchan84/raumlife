@@ -26,6 +26,7 @@ class SafeCtrl implements Controller {
   chooseCpBoost(): number { return 0; }
   wantReroll(): boolean { return false; }
   choosePathOption(_s: GameState, _me: number, _z: number, a: boolean[]): number { return a.findIndex(Boolean); }
+  chooseJob(_s: GameState, _me: number, o: { enabled: boolean }[]): number { return o.findIndex((x) => x.enabled); }
   chooseMilestone(_s: GameState, _me: number, _z: number, _t: string, o: { enabled: boolean }[]): number { return o.findIndex((x) => x.enabled); }
   chooseLodge(): boolean { return false; }
   chooseSabotage(_s: GameState, _me: number, targets: number[]): number | null {
@@ -80,8 +81,8 @@ describe('새 칸과 카드', () => {
   it('모든 구간에 각 덱의 전용 카드가 있고, 카드 효과가 설계 의도에 맞다', () => {
     for (let z = 1; z <= 10; z++) {
       for (const deck of ['journey', 'activity', 'trouble'] as const) {
-        expect(DECKS[deck].filter((c) => c.zone === z).length, `${deck} zone ${z}`).toBeGreaterThanOrEqual(1);
-        expect(DECKS[deck].filter((c) => c.zone === 0).length).toBeGreaterThanOrEqual(5); // 공통 카드
+        const min = { journey: 6, activity: 3, trouble: 4 }[deck];
+        expect(DECKS[deck].filter((c) => c.zone === z).length, `${deck} zone ${z}`).toBeGreaterThanOrEqual(min);
       }
     }
     const sum = (e: Effect) => (['asset', 'happy', 'network', 'growth', 'stamina'] as const).reduce((a, k) => a + (e[k] ?? 0), 0);

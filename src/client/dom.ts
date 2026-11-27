@@ -1,4 +1,5 @@
 import type { Effect, LifeState } from '../engine';
+import { salaryOf } from '../engine';
 
 type Child = Node | string | number | null | undefined | false | Child[];
 type Attrs = Record<string, unknown>;
@@ -39,7 +40,7 @@ export function fmtEffect(e: Effect): string {
     if (l.children) parts.push(`👶자녀+${l.children}`);
     if (l.grandchildren) parts.push(`🧒손주+${l.grandchildren}`);
     if (l.home) parts.push('🏠내 집');
-    if (l.career) parts.push(`💼${l.career}`);
+    if (l.raise) parts.push(`💼연봉+${l.raise}`);
   }
   return parts.length ? parts.join(' ') : '변화 없음';
 }
@@ -55,7 +56,7 @@ export function clear(el: HTMLElement) {
 /** 인생 상태를 짧게: 💼회사원 💞 👶×1 🏠 🧒×1 */
 export function lifeText(l: LifeState): string {
   const parts: string[] = [];
-  if (l.career) parts.push(`💼${l.career}`);
+  if (l.career) parts.push(`💼${l.career}(월급 ${salaryOf(l)})`);
   if (l.partner) parts.push('💞');
   if (l.children) parts.push(`👶×${l.children}`);
   if (l.home) parts.push('🏠');

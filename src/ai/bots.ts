@@ -1,4 +1,4 @@
-import type { Board, Controller, Effect, GameState, JourneyCard, MilestoneChoice, PlayerState } from '../engine';
+import type { Board, Controller, Effect, GameState, JobChoice, JourneyCard, MilestoneChoice, PlayerState } from '../engine';
 import { distancesToSummit, LODGE_COST, LODGE_EFFECT, PATH_ARCHETYPES, Rng, STAT_KEYS, goalCompletion } from '../engine';
 
 // ───────── 평가 함수 ─────────
@@ -17,7 +17,7 @@ export function valueAfter(s: GameState, me: number, e: Effect): number {
   for (const k of STAT_KEYS) if (e[k]) stats[k] = Math.max(0, stats[k] + (e[k] ?? 0));
   const life = { ...p.life };
   if (e.life) {
-    if (e.life.career) life.career = e.life.career;
+    if (e.life.raise) life.raise += e.life.raise;
     if (e.life.partner) life.partner = true;
     if (e.life.children) life.children += e.life.children;
     if (e.life.grandchildren) life.grandchildren += e.life.grandchildren;
@@ -27,7 +27,7 @@ export function valueAfter(s: GameState, me: number, e: Effect): number {
   const avg = s.goals.reduce((a, g) => a + goalCompletion(virtual, g), 0) / s.goals.length;
   const stamina = clamp(p.stamina + (e.stamina ?? 0), 0, s.tuning.maxStamina);
   // 인생 상태는 이정표마다 꾸준한 이득을 주므로 그 자체로 가치가 있다
-  const lifeValue = (life.career ? 3 : 0) + (life.home ? 4 : 0) + (life.partner ? 6 : 0) + Math.min(2, life.children) * 8 + Math.min(2, life.grandchildren) * 4;
+  const lifeValue = life.raise * 4 + (life.home ? 4 : 0) + (life.partner ? 6 : 0) + Math.min(2, life.children) * 8 + Math.min(2, life.grandchildren) * 4;
   const cp = clamp(p.cp + (e.cp ?? 0), 0, s.tuning.maxCp);
   return avg * 100 + staminaValue(stamina) + CP_VALUE * cp + lifeValue;
 }
@@ -171,6 +171,17 @@ export class HeuristicBot implements Controller {
     return best;
   }
 
+  chooseJob(_s: GameState, _me: number, options: JobChoice[]): number {
+    // 월급이 가장 높은 직업 (같으면 보람 있는 쪽)
+    let best = -1;
+    options.forEach((o, i) => {
+      if (!o.enabled) return;
+      const b = options[best];
+      if (!b || o.salary > b.salary) best = i;
+    });
+    return best;
+  }
+
   chooseMilestone(s: GameState, me: number, _zone: number, _title: string, options: MilestoneChoice[]): number {
     let best = -1;
     let bestV = -Infinity;
@@ -247,6 +258,10 @@ export class RandomBot implements Controller {
   }
   choosePathOption(_s: GameState, _me: number, _zone: number, available: boolean[]): number {
     const idx = available.map((a, i) => (a ? i : -1)).filter((i) => i >= 0);
+    return idx.length ? idx[this.rng.int(idx.length)]! : -1;
+  }
+  chooseJob(_s: GameState, _me: number, options: JobChoice[]): number {
+    const idx = options.map((o, i) => (o.enabled ? i : -1)).filter((i) => i >= 0);
     return idx.length ? idx[this.rng.int(idx.length)]! : -1;
   }
   chooseMilestone(_s: GameState, _me: number, _zone: number, _title: string, options: MilestoneChoice[]): number {

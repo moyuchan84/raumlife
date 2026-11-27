@@ -1,3 +1,4 @@
+import { salaryOf } from './data/jobs';
 import type { Difficulty, Goal, GameConfig, PlayerState, StatKey, Tuning } from './types';
 import { STAT_KEYS } from './types';
 import { Rng } from './rng';
@@ -21,7 +22,7 @@ const CONDITIONS: CondTemplate[] = [
   { cond: 'challengesWon', minZones: 1, n: (z) => Math.max(2, Math.round(z * 0.6)) },
   { cond: 'pathsTaken', minZones: 2, n: (z) => Math.max(2, Math.round(z * 0.3)) },
   // 인생 목표: 코스가 해당 사건이 일어나는 구간을 지나갈 때만 나온다
-  { cond: 'hasCareer', minZones: 1, when: (c) => c.startZone <= 4 && c.endZone >= 4 },
+  { cond: 'highSalary', minZones: 1, n: () => 4, when: (c) => c.startZone <= 7 && c.endZone >= 6 },
   { cond: 'hasPartner', minZones: 1, when: (c) => c.startZone <= 5 && c.endZone >= 5 },
   { cond: 'hasHome', minZones: 1, when: (c) => c.startZone <= 6 && c.endZone >= 6 },
   { cond: 'hasChild', minZones: 1, when: (c) => c.startZone <= 6 && c.endZone >= 6 },
@@ -49,7 +50,7 @@ export function generateGoals(config: GameConfig, tuning: Tuning, rng: Rng): Goa
   const statPool = rng.shuffle(STAT_KEYS);
   for (let i = 0; i < stats; i++) {
     const stat = statPool[i]!;
-    const target = Math.round(START_STATS[stat] + zones * tuning.perZoneGain * coef);
+    const target = Math.round(START_STATS[stat] + zones * tuning.perZoneGain * coef * tuning.statWeight[stat]);
     goals.push({ kind: 'stat', stat, target });
   }
   const condPool = rng.shuffle(CONDITIONS.filter((c) => c.minZones <= zones && (!c.when || c.when(config))));
@@ -85,8 +86,8 @@ export function goalCompletion(p: PlayerState, g: Goal): number {
       return p.life.home ? 1 : 0;
     case 'hasChild':
       return p.life.children >= 1 ? 1 : 0;
-    case 'hasCareer':
-      return p.life.career ? 1 : 0;
+    case 'highSalary':
+      return salaryOf(p.life) >= (g.n ?? 4) ? 1 : 0;
     case 'grandchild':
       return p.life.grandchildren >= 1 ? 1 : 0;
   }
@@ -121,8 +122,8 @@ export function goalLabel(g: Goal): string {
       return '🏠 내 집 마련하기';
     case 'hasChild':
       return '👶 아이를 맞이하기';
-    case 'hasCareer':
-      return '💼 직업 갖기';
+    case 'highSalary':
+      return `💼 월급 ${g.n ?? 4} 이상의 직업`;
     case 'grandchild':
       return '🧒 손주 보기';
   }

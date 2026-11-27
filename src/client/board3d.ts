@@ -5,7 +5,7 @@ import { Rng, ZONES } from '../engine';
 import { SEAT_COLORS } from '../shared/avatar';
 import type { PlayerView } from '../shared/protocol';
 import { animateCharacter, createCharacter, type Char3D, type CharMode } from './avatar3d';
-import { TILE_ICON } from './board';
+import { tileIcon } from './board';
 
 // ───────── 배치 ─────────
 const SPACING = 42; // 섬 사이 간격
@@ -570,7 +570,7 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
   }
 
   // ── 칸 (원판 + 아이콘 + 작은 소품)
-  const icons = new Map<TileType, THREE.CanvasTexture>();
+  const icons = new Map<string, THREE.CanvasTexture>();
   const tileIconSprites: THREE.Sprite[] = [];
   for (const t of tiles) {
     const p = pos[t.id]!;
@@ -608,8 +608,9 @@ export function createBoard3D(container: HTMLElement, tiles: Tile[], startZone: 
       scene.add(prop);
     }
     if (t.type !== 'journey' && t.type !== 'fork') {
-      if (!icons.has(t.type)) icons.set(t.type, emojiTexture(TILE_ICON[t.type]));
-      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: icons.get(t.type)!, transparent: true }));
+      const glyph = tileIcon(t.type, t.zone);
+      if (!icons.has(glyph)) icons.set(glyph, emojiTexture(glyph));
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: icons.get(glyph)!, transparent: true }));
       spr.scale.setScalar(big ? 3 : 1.7);
       spr.position.set(p.x, p.y + lift + 2.2 + (big ? 1 : 0), p.z);
       spr.userData.baseY = spr.position.y;
