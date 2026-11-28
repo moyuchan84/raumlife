@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // ───────── 월드 ─────────
 const W = 64, D = 64, H = 64, CS = 16;
@@ -10,32 +11,71 @@ const key = (x: number, y: number, z: number) => idx(x, y, z);
 
 interface BlockDef { id: number; name: string; color: number; clear?: boolean }
 const BLOCKS: BlockDef[] = [
-  { id: 1, name: '잔디', color: 0x5aa84a }, { id: 2, name: '흙', color: 0x8a5a34 },
-  { id: 3, name: '모래', color: 0xe4d49a }, { id: 4, name: '돌', color: 0x8d9096 },
-  { id: 5, name: '나무판자', color: 0xb98a4f }, { id: 6, name: '벽돌', color: 0xb5503c },
-  { id: 7, name: '유리', color: 0xbfe6ff, clear: true }, { id: 8, name: '하얀 벽', color: 0xf0eee8 },
-  { id: 9, name: '지붕', color: 0x3f5f8f }, { id: 10, name: '눈', color: 0xf4f8ff },
-  { id: 11, name: '물', color: 0x3b7fe0, clear: true }, { id: 12, name: '수영장 타일', color: 0x9fd8e8 },
-  { id: 13, name: '카펫', color: 0xa84a5e },
+  { id: 1, name: '잔디', color: 0x86b868 }, { id: 2, name: '흙', color: 0x9b7655 },
+  { id: 3, name: '모래', color: 0xe8dcb4 }, { id: 4, name: '돌', color: 0x9a9ea6 },
+  { id: 5, name: '나무판자', color: 0xc9a06a }, { id: 6, name: '벽돌', color: 0xc0675a },
+  { id: 7, name: '유리', color: 0xcfe9f7, clear: true }, { id: 8, name: '하얀 벽', color: 0xf3f1ec },
+  { id: 9, name: '지붕', color: 0x55708f }, { id: 10, name: '눈', color: 0xf4f8ff },
+  { id: 11, name: '물', color: 0x4d8fd9, clear: true }, { id: 12, name: '수영장 타일', color: 0xa8dce8 },
+  { id: 13, name: '카펫', color: 0xb8707f },
 ];
 const BCOLOR: Record<number, THREE.Color> = {};
 BLOCKS.forEach((b) => (BCOLOR[b.id] = new THREE.Color(b.color)));
 const isClear = (v: number) => v === 7 || v === 11;
 const WATER = 11;
 
-// 가구 (한 칸짜리, 회전 가능)
-interface FurnDef { id: string; name: string; solid: boolean; sit?: boolean }
-const FURN: FurnDef[] = [
-  { id: 'sofa', name: '소파', solid: true, sit: true }, { id: 'tv', name: 'TV', solid: true },
-  { id: 'bed', name: '침대', solid: true, sit: true }, { id: 'table', name: '식탁', solid: true },
-  { id: 'chair', name: '의자', solid: true, sit: true }, { id: 'shelf', name: '책장', solid: true },
-  { id: 'fridge', name: '냉장고', solid: true }, { id: 'lamp', name: '조명', solid: false },
-  { id: 'plant', name: '화분', solid: false }, { id: 'ladder', name: '사다리', solid: false },
-];
+// 가구 카탈로그 (칸 단위 크기 w×d×h, 색·스타일별 변형)
+interface FurnDef { id: string; name: string; cat: string; kind: string; w: number; d: number; h: number; solid: boolean; sit: boolean; color: number; color2: number; opt: string }
+const FURN: FurnDef[] = [];
+const CATS = ['소파', 'TV', '침대', '테이블·수납', '소품'];
+function F(cat: string, id: string, name: string, kind: string, w: number, d: number, color: number, o: Partial<FurnDef> = {}) {
+  FURN.push({ id, name, cat, kind, w, d, h: 1, solid: true, sit: false, color, color2: 0x7a5a3a, opt: '', ...o });
+}
+F('소파', 'sofa_beige', '베이지 소파 (2인)', 'sofa', 2, 1, 0xd9c4a1, { sit: true });
+F('소파', 'sofa_gray', '회색 소파 (2인)', 'sofa', 2, 1, 0x8b8e95, { sit: true });
+F('소파', 'sofa_black', '검은색 소파 (2인)', 'sofa', 2, 1, 0x2c2c32, { sit: true });
+F('소파', 'sofa_white', '하얀색 소파 (2인)', 'sofa', 2, 1, 0xf2f0ea, { sit: true });
+F('소파', 'sofa_soft', '부드러운 소파 (2인)', 'sofa', 2, 1, 0xecd8d0, { sit: true, opt: 'soft' });
+F('소파', 'sofa_plush', '푹신한 소파 (3인)', 'sofa', 3, 1, 0xc9b59a, { sit: true, opt: 'plush' });
+F('소파', 'sofa_leather', '갈색 가죽 소파 (3인)', 'sofa', 3, 1, 0x7b4b2f, { sit: true, opt: 'leather' });
+F('소파', 'sofa_single', '1인용 소파', 'sofa', 1, 1, 0x7c91b3, { sit: true });
+F('TV', 'tv_small', '작은 TV', 'tv', 1, 1, 0x7a5636);
+F('TV', 'tv_mid', '중간 TV', 'tv', 1, 1, 0x7a5636);
+F('TV', 'tv_big', '큰 TV', 'tv', 2, 1, 0x7a5636, { h: 2 });
+F('TV', 'tv_huge', '초대형 TV', 'tv', 3, 1, 0x3b3d44, { h: 2 });
+F('침대', 'bed_small', '작은 침대', 'bed', 1, 2, 0x8fb4d9, { sit: true });
+F('침대', 'bed_plush', '푹신한 침대', 'bed', 2, 2, 0xe7c9d0, { sit: true, opt: 'plush' });
+F('침대', 'bed_queen', '퀸사이즈 침대', 'bed', 2, 2, 0x9aa8c7, { sit: true });
+F('침대', 'bed_king', '킹사이즈 침대', 'bed', 3, 2, 0x6f8f7d, { sit: true });
+F('침대', 'bed_massage', '안마 침대', 'bed', 2, 2, 0x4a4f63, { sit: true, opt: 'massage' });
+F('침대', 'bed_bunk', '2층 침대', 'bed', 1, 2, 0xd8a15a, { sit: true, opt: 'bunk', h: 2 });
+F('테이블·수납', 'table_dining', '식탁 (큰)', 'table', 2, 1, 0xb98a5a);
+F('테이블·수납', 'table_coffee', '커피 테이블', 'table', 1, 1, 0xd1b58a, { opt: 'low' });
+F('테이블·수납', 'desk', '책상', 'table', 2, 1, 0xe3dccb, { opt: 'desk' });
+F('테이블·수납', 'chair', '의자', 'chair', 1, 1, 0xc89a5a, { sit: true });
+F('테이블·수납', 'shelf', '책장', 'shelf', 1, 1, 0x8a5a34);
+F('테이블·수납', 'shelf_wide', '큰 책장', 'shelf', 2, 1, 0x6e4a2c);
+F('테이블·수납', 'wardrobe', '옷장', 'wardrobe', 2, 1, 0xefe9de, { h: 2 });
+F('테이블·수납', 'fridge', '냉장고', 'fridge', 1, 1, 0xdfe4ea);
+F('소품', 'lamp', '스탠드 조명', 'lamp', 1, 1, 0xf6e6a8, { solid: false });
+F('소품', 'plant', '화분', 'plant', 1, 1, 0x3f9a4a, { solid: false });
+F('소품', 'plant_big', '큰 화분', 'plant', 1, 1, 0x2f8a46, { solid: false, opt: 'big' });
+F('소품', 'rug', '러그 (큰)', 'rug', 2, 2, 0xc4796b, { solid: false });
+F('소품', 'tub', '욕조', 'tub', 2, 1, 0xf6f8fa);
+F('소품', 'ladder', '사다리', 'ladder', 1, 1, 0x8a5a34, { solid: false });
 interface Furn { type: string; rot: number; on?: boolean }
-const furn = new Map<number, Furn>();
+const furn = new Map<number, Furn>(); // 기준 칸(최소 좌표) → 가구
+const owner = new Map<number, number>(); // 점유 칸 → 기준 칸
 const furnGroups = new Map<number, THREE.Object3D>();
-const furnDef = (t: string) => FURN.find((f) => f.id === t)!;
+const furnDef = (t: string) => FURN.find((f) => f.id === t);
+const dimsOf = (d: FurnDef, rot: number): [number, number] => (rot % 2 ? [d.d, d.w] : [d.w, d.d]);
+function cellsOf(d: FurnDef, rot: number, x: number, y: number, z: number) {
+  const [fw, fd] = dimsOf(d, rot), out: [number, number, number][] = [];
+  for (let yy = 0; yy < d.h; yy++) for (let zz = 0; zz < fd; zz++) for (let xx = 0; xx < fw; xx++) out.push([x + xx, y + yy, z + zz]);
+  return out;
+}
+const unkey = (k: number): [number, number, number] => [k % W, (((k / W) | 0) % D), ((k / (W * D)) | 0)];
+const furnAt = (k: number) => { const a = owner.get(k); return a === undefined ? undefined : furn.get(a); };
 
 // ───────── 지형 생성 ─────────
 function hash2(x: number, z: number, s: number) {
@@ -55,7 +95,7 @@ type Preset = 'flat' | 'hills' | 'lake' | 'island' | 'snow';
 const PRESETS: [Preset, string][] = [['flat', '평지'], ['hills', '언덕'], ['lake', '호수'], ['island', '섬'], ['snow', '설산']];
 
 function generate(preset: Preset, seed: number) {
-  vox.fill(0); furn.clear();
+  vox.fill(0); clearFurnMeshes();
   const water = 9;
   for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
     const n = fbm(x, z, seed);
@@ -91,13 +131,20 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 50, 130);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+const skyC = document.createElement('canvas'); skyC.width = 2; skyC.height = 256;
+{ const c = skyC.getContext('2d')!, g = c.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, '#6fb0e6'); g.addColorStop(0.65, '#bfdcf2'); g.addColorStop(1, '#eef5fa'); c.fillStyle = g; c.fillRect(0, 0, 2, 256); }
+const sky = new THREE.CanvasTexture(skyC); sky.colorSpace = THREE.SRGBColorSpace;
+scene.background = sky;
+scene.fog = new THREE.Fog(0xd3e7f5, 50, 140);
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 300);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x6a6a7a, 1.5));
-const sun = new THREE.DirectionalLight(0xfff2d8, 1.8);
-sun.position.set(30, 60, 20);
-scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xdcecff, 0x8a8576, 1.25));
+const sun = new THREE.DirectionalLight(0xfff0d6, 2.2);
+sun.position.set(W / 2 + 38, 70, D / 2 + 24); sun.target.position.set(W / 2, 0, D / 2);
+sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04;
+Object.assign(sun.shadow.camera, { left: -52, right: 52, top: 52, bottom: -52, near: 1, far: 180 });
+scene.add(sun, sun.target);
 addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
@@ -150,90 +197,176 @@ function rebuildChunk(id: number) {
     const v = vox[idx(x, y, z)]!;
     if (!v) continue;
     const clear = isClear(v), l = L[clear ? 1 : 0]!;
-    const col = BCOLOR[v]!, nz = 0.92 + hash2(x + y * 3, z - y, 5) * 0.12;
+    const col = BCOLOR[v]!;
     for (const f of FACES) {
       const nv = getV(x + f.d[0], y + f.d[1], z + f.d[2]);
       if (!(nv === 0 || (isClear(nv) && nv !== v))) continue;
-      const base = l.p.length / 3;
+      const ai = f.d[0] ? 0 : f.d[1] ? 1 : 2, t1 = (ai + 1) % 3, t2 = (ai + 2) % 3;
+      const bx = x + f.d[0], by = y + f.d[1], bz = z + f.d[2], ao: number[] = [];
       for (const c of f.c) {
-        l.p.push(x + c[0], y + c[1], z + c[2]); l.n.push(...f.d);
-        l.c.push(col.r * nz, col.g * nz, col.b * nz);
+        const o1 = [0, 0, 0], o2 = [0, 0, 0]; o1[t1] = c[t1] * 2 - 1; o2[t2] = c[t2] * 2 - 1;
+        const so = (o: number[]) => { const q = getV(bx + o[0]!, by + o[1]!, bz + o[2]!); return q && !isClear(q) ? 1 : 0; };
+        const a = so(o1), b = so(o2), cc = so([o1[0]! + o2[0]!, o1[1]! + o2[1]!, o1[2]! + o2[2]!]);
+        ao.push(a && b ? 0 : 3 - (a + b + cc));
       }
-      l.i.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      const base = l.p.length / 3;
+      f.c.forEach((c, i) => {
+        l.p.push(x + c[0], y + c[1], z + c[2]); l.n.push(...f.d);
+        const br = clear ? 1 : [0.5, 0.68, 0.84, 1][ao[i]!]!;
+        l.c.push(col.r * br, col.g * br, col.b * br);
+      });
+      if (ao[0]! + ao[2]! >= ao[1]! + ao[3]!) l.i.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      else l.i.push(base + 1, base + 2, base + 3, base + 1, base + 3, base);
     }
   }
   const old = chunks.get(id) ?? {};
   for (const m of [old.op, old.cl]) if (m) { scene.remove(m); m.geometry.dispose(); }
   const ch: Chunk = {};
-  if (L[0]!.i.length) { ch.op = new THREE.Mesh(buildGeo(L[0]!), matOpaque); scene.add(ch.op); }
-  if (L[1]!.i.length) { ch.cl = new THREE.Mesh(buildGeo(L[1]!), matClear); ch.cl.renderOrder = 1; scene.add(ch.cl); }
+  if (L[0]!.i.length) { ch.op = new THREE.Mesh(buildGeo(L[0]!), matOpaque); ch.op.castShadow = ch.op.receiveShadow = true; scene.add(ch.op); }
+  if (L[1]!.i.length) { ch.cl = new THREE.Mesh(buildGeo(L[1]!), matClear); ch.cl.renderOrder = 1; ch.cl.receiveShadow = true; scene.add(ch.cl); }
   chunks.set(id, ch);
 }
 
-// ───────── 가구 모델 ─────────
-const bm = (c: number, e = 0) => new THREE.MeshLambertMaterial({ color: c, emissive: e });
-function box(g: THREE.Group, w: number, h: number, d: number, x: number, y: number, z: number, m: THREE.Material) {
-  const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); g.add(o); return o;
+// ───────── 가구 모델 (둥근 모서리, 부드러운 재질) ─────────
+const stdm = (c: number, r = 0.85, e = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, emissive: e });
+const shade = (c: number, f: number) => new THREE.Color(c).multiplyScalar(f).getHex();
+function rb(g: THREE.Group, w: number, h: number, d: number, r: number, x: number, y: number, z: number, m: THREE.Material) {
+  const rr = Math.max(0.001, Math.min(r, w / 2 - 0.001, h / 2 - 0.001, d / 2 - 0.001));
+  const o = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 3, rr), m); o.position.set(x, y, z); g.add(o); return o;
 }
-function makeFurn(type: string): THREE.Group {
-  const g = new THREE.Group();
-  const wood = bm(0x8a5a34), dark = bm(0x25262b);
-  if (type === 'sofa') {
-    const m = bm(0x4f6fa8);
-    box(g, 0.96, 0.35, 0.9, 0, 0.18, 0, m); box(g, 0.96, 0.55, 0.2, 0, 0.55, -0.36, m);
-    box(g, 0.14, 0.3, 0.7, -0.41, 0.5, 0.05, bm(0x3d5a8c)); box(g, 0.14, 0.3, 0.7, 0.41, 0.5, 0.05, bm(0x3d5a8c));
-  } else if (type === 'tv') {
-    box(g, 0.7, 0.3, 0.4, 0, 0.15, 0, wood); box(g, 0.94, 0.58, 0.08, 0, 0.62, 0, dark);
-    const s = new THREE.Mesh(new THREE.PlaneGeometry(0.84, 0.48), new THREE.MeshBasicMaterial({ color: 0x0b0d12 }));
-    s.position.set(0, 0.62, 0.045); s.name = 'screen'; g.add(s);
-  } else if (type === 'bed') {
-    box(g, 0.98, 0.3, 0.98, 0, 0.15, 0, wood); box(g, 0.9, 0.2, 0.94, 0, 0.4, 0, bm(0xe9e6df));
-    box(g, 0.5, 0.1, 0.25, 0, 0.55, -0.3, bm(0x7fb0e0)); box(g, 0.9, 0.12, 0.55, 0, 0.5, 0.2, bm(0xd25a6a));
-    box(g, 0.98, 0.7, 0.08, 0, 0.35, -0.47, wood);
-  } else if (type === 'table') {
-    box(g, 0.98, 0.1, 0.98, 0, 0.8, 0, wood);
-    for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]] as const) box(g, 0.1, 0.75, 0.1, x, 0.375, z, wood);
-  } else if (type === 'chair') {
-    const m = bm(0xc89a5a);
-    box(g, 0.6, 0.1, 0.6, 0, 0.45, 0, m); box(g, 0.6, 0.55, 0.1, 0, 0.75, -0.25, m);
-    for (const [x, z] of [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]] as const) box(g, 0.07, 0.4, 0.07, x, 0.2, z, m);
-  } else if (type === 'shelf') {
-    box(g, 0.96, 0.98, 0.4, 0, 0.49, -0.28, wood);
-    const cols = [0xd25a4a, 0x4a8ad2, 0x5ab06a, 0xe0b040];
-    for (let r = 0; r < 3; r++) for (let i = 0; i < 4; i++) box(g, 0.18, 0.22, 0.3, -0.36 + i * 0.24, 0.2 + r * 0.3, -0.05, bm(cols[(i + r) % 4]!));
-  } else if (type === 'fridge') {
-    box(g, 0.8, 0.98, 0.7, 0, 0.49, 0, bm(0xdfe4ea)); box(g, 0.05, 0.3, 0.05, 0.3, 0.7, 0.38, bm(0x777b82)); box(g, 0.78, 0.02, 0.02, 0, 0.55, 0.36, dark);
-  } else if (type === 'lamp') {
-    box(g, 0.08, 0.7, 0.08, 0, 0.35, 0, dark); const s = box(g, 0.36, 0.3, 0.36, 0, 0.8, 0, bm(0xf6e6a8, 0x000000)); s.name = 'shade';
-  } else if (type === 'plant') {
-    box(g, 0.35, 0.3, 0.35, 0, 0.15, 0, bm(0xb5603c));
-    const l = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 8), bm(0x3f9a4a)); l.position.y = 0.6; g.add(l);
-  } else if (type === 'ladder') {
-    box(g, 0.06, 1, 0.06, -0.3, 0.5, -0.45, wood); box(g, 0.06, 1, 0.06, 0.3, 0.5, -0.45, wood);
-    for (let i = 0; i < 4; i++) box(g, 0.6, 0.05, 0.05, 0, 0.12 + i * 0.25, -0.45, wood);
+function mSofa(g: THREE.Group, D_: FurnDef) {
+  const w = D_.w, soft = D_.opt === 'soft', plush = D_.opt === 'plush', leather = D_.opt === 'leather';
+  const rough = leather ? 0.4 : soft || plush ? 1 : 0.85;
+  const m = stdm(D_.color, rough), m2 = stdm(shade(D_.color, 1.08), rough), md = stdm(shade(D_.color, 0.86), rough);
+  const W_ = w * 0.96, sh = plush ? 0.4 : 0.3, r = soft || plush ? 0.13 : 0.05, ad = plush ? 0.26 : 0.17, off = 0.04;
+  rb(g, W_, sh, 0.9, r, 0, sh / 2 + off, 0, md);
+  const cw = (W_ - ad * 2) / w;
+  for (let i = 0; i < w; i++) rb(g, cw - 0.02, plush ? 0.22 : 0.15, 0.62, r, -(W_ - 2 * ad) / 2 + cw * (i + 0.5), sh + off + (plush ? 0.08 : 0.05), 0.1, m2);
+  rb(g, W_, plush ? 0.7 : 0.55, plush ? 0.3 : 0.2, r, 0, sh + off + (plush ? 0.3 : 0.22), -0.36, m);
+  for (const s of [-1, 1]) { const ah = sh + (plush ? 0.28 : 0.2); rb(g, ad, ah, 0.9, r, s * (W_ / 2 - ad / 2), ah / 2 + off, 0, md); }
+  if (!plush) for (const x of [-1, 1]) for (const z of [-1, 1]) rb(g, 0.06, 0.05, 0.06, 0.01, x * (W_ / 2 - 0.08), 0.02, z * 0.36, stdm(0x222222));
+}
+const TVW: Record<string, number> = { tv_small: 0.5, tv_mid: 0.82, tv_big: 1.6, tv_huge: 2.5 };
+function mTV(g: THREE.Group, D_: FurnDef) {
+  const sw = TVW[D_.id] ?? 0.82, sh = sw * 0.5625, dk = stdm(0x15161a, 0.4);
+  rb(g, D_.w * 0.96, 0.3, 0.42, 0.03, 0, 0.17, 0, stdm(D_.color, 0.7));
+  const y = 0.32 + sh / 2 + 0.05;
+  rb(g, 0.26, 0.08, 0.16, 0.02, 0, 0.35, 0, dk);
+  rb(g, sw + 0.05, sh + 0.05, 0.05, 0.015, 0, y, 0, dk);
+  const s = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), new THREE.MeshBasicMaterial({ color: 0x0b0d12 }));
+  s.position.set(0, y, 0.027); s.name = 'screen'; g.add(s);
+}
+function mBed(g: THREE.Group, D_: FurnDef) {
+  const w = D_.w, d = D_.d, plush = D_.opt === 'plush', massage = D_.opt === 'massage', bunk = D_.opt === 'bunk';
+  const frame = stdm(massage ? 0x2d3040 : D_.color2, 0.7), bed = stdm(0xf3f0ea, 0.95), blk = stdm(D_.color, 0.95), pil = stdm(0xffffff, 0.95);
+  const layer = (y0: number) => {
+    rb(g, w * 0.98, 0.26, d * 0.98, 0.04, 0, y0 + 0.17, 0, frame);
+    const mh = plush ? 0.38 : 0.22, mr = plush ? 0.13 : 0.05, top = y0 + 0.3 + mh;
+    rb(g, w * 0.92, mh, d * 0.92, mr, 0, y0 + 0.3 + mh / 2, 0, bed);
+    const n = w >= 3 ? 3 : w >= 2 ? 2 : 1;
+    for (let i = 0; i < n; i++) rb(g, (w * 0.9) / n - 0.12, plush ? 0.18 : 0.13, 0.3, 0.06, ((i + 0.5) / n - 0.5) * w * 0.9, top + 0.05, -d / 2 + 0.36, pil);
+    rb(g, w * 0.94, plush ? 0.2 : 0.11, d * 0.55, plush ? 0.1 : 0.05, 0, top + 0.03, d * 0.17, blk);
+    if (!bunk) rb(g, w * 0.98, w >= 3 ? 1.0 : 0.8, 0.08, 0.03, 0, 0.26 + (w >= 3 ? 0.5 : 0.4), -d / 2 + 0.04, frame);
+    return top;
+  };
+  const top = layer(0);
+  if (bunk) {
+    layer(1.0);
+    for (const x of [-1, 1]) for (const z of [-1, 1]) rb(g, 0.07, 1.9, 0.07, 0.02, x * (w / 2 - 0.05), 0.95, z * (d / 2 - 0.05), frame);
+    for (let i = 0; i < 5; i++) rb(g, 0.04, 0.04, 0.3, 0.01, -w / 2 + 0.02, 0.25 + i * 0.35, d / 2 - 0.3, frame);
   }
+  if (massage) {
+    const glow = stdm(0x2a8cff, 0.3, 0x2a8cff);
+    rb(g, w * 0.9, 0.04, 0.04, 0.01, 0, 0.05, d / 2 - 0.02, glow);
+    for (let i = 0; i < 3; i++) rb(g, w * 0.7, 0.012, 0.05, 0.005, 0, top + 0.115, -d * 0.1 + i * 0.35, stdm(0x7fe6ff, 0.3, 0x39c6e8));
+    rb(g, 0.2, 0.12, 0.04, 0.02, w / 2 - 0.25, 0.62, -d / 2 + 0.1, stdm(0x5cff9a, 0.3, 0x2bc26a));
+  }
+}
+function mTable(g: THREE.Group, D_: FurnDef) {
+  const wood = stdm(D_.color, 0.7), low = D_.opt === 'low', h = low ? 0.42 : 0.78, tw = D_.w * 0.96, td = D_.d * 0.9;
+  rb(g, tw, 0.08, td, 0.02, 0, h, 0, wood);
+  for (const x of [-1, 1]) for (const z of [-1, 1]) rb(g, 0.08, h, 0.08, 0.02, x * (tw / 2 - 0.07), h / 2, z * (td / 2 - 0.07), wood);
+  if (D_.opt === 'desk') rb(g, 0.5, 0.5, td - 0.1, 0.03, -(tw / 2 - 0.3), 0.5, 0, stdm(shade(D_.color, 0.92)));
+}
+function mChair(g: THREE.Group, D_: FurnDef) {
+  const m = stdm(D_.color, 0.7);
+  rb(g, 0.6, 0.1, 0.6, 0.04, 0, 0.45, 0, m); rb(g, 0.6, 0.55, 0.09, 0.04, 0, 0.77, -0.25, m);
+  for (const x of [-1, 1]) for (const z of [-1, 1]) rb(g, 0.07, 0.42, 0.07, 0.02, x * 0.24, 0.21, z * 0.24, m);
+}
+function mShelf(g: THREE.Group, D_: FurnDef) {
+  const wood = stdm(D_.color, 0.7), w = D_.w;
+  rb(g, w * 0.96, 0.98, 0.4, 0.02, 0, 0.49, -0.28, wood);
+  const cols = [0xd25a4a, 0x4a8ad2, 0x5ab06a, 0xe0b040];
+  for (let r = 0; r < 3; r++) for (let i = 0; i < 4 * w; i++) rb(g, 0.16, 0.22, 0.3, 0.02, (-w * 0.48) + 0.2 + i * (0.92 * w / (4 * w) + 0.0), 0.2 + r * 0.3, -0.05, stdm(cols[(i + r) % 4]!));
+}
+function mWardrobe(g: THREE.Group, D_: FurnDef) {
+  const m = stdm(D_.color, 0.7);
+  rb(g, D_.w * 0.96, 1.96, 0.6, 0.03, 0, 0.98, -0.18, m);
+  for (const s of [-1, 1]) { rb(g, 0.04, 0.3, 0.03, 0.01, s * 0.06, 1.0, 0.13, stdm(0xb59a6a)); }
+  rb(g, 0.01, 1.8, 0.01, 0, 0, 0.98, 0.125, stdm(0x9c927f));
+}
+function mFridge(g: THREE.Group) {
+  rb(g, 0.8, 0.98, 0.7, 0.05, 0, 0.49, 0, stdm(0xdfe4ea, 0.4)); rb(g, 0.05, 0.3, 0.05, 0.02, 0.3, 0.7, 0.38, stdm(0x777b82)); rb(g, 0.78, 0.02, 0.02, 0, 0, 0.55, 0.36, stdm(0x555a60));
+}
+function mLamp(g: THREE.Group) {
+  const dk = stdm(0x2a2a2e); rb(g, 0.3, 0.04, 0.3, 0.02, 0, 0.02, 0, dk); rb(g, 0.05, 0.8, 0.05, 0.02, 0, 0.42, 0, dk);
+  rb(g, 0.38, 0.3, 0.38, 0.12, 0, 0.95, 0, stdm(0xf6e6a8, 0.9, 0x000000)).name = 'shade';
+}
+function mPlant(g: THREE.Group, D_: FurnDef) {
+  const big = D_.opt === 'big', s = big ? 1.5 : 1;
+  rb(g, 0.36 * s, 0.3 * s, 0.36 * s, 0.06, 0, 0.15 * s, 0, stdm(0xc0694a));
+  for (const [dx, dy, dz, r] of [[0, 0.62, 0, 0.3], [0.14, 0.5, 0.1, 0.2], [-0.12, 0.52, -0.1, 0.2]] as const) {
+    const l = new THREE.Mesh(new THREE.IcosahedronGeometry(r * s, 1), stdm(D_.color, 0.9)); l.position.set(dx * s, dy * s + (big ? 0.2 : 0), dz * s); g.add(l);
+  }
+}
+function mRug(g: THREE.Group, D_: FurnDef) {
+  rb(g, D_.w * 0.96, 0.03, D_.d * 0.96, 0.012, 0, 0.016, 0, stdm(D_.color, 1));
+  rb(g, D_.w * 0.7, 0.036, D_.d * 0.7, 0.012, 0, 0.018, 0, stdm(shade(D_.color, 1.2), 1));
+}
+function mTub(g: THREE.Group, D_: FurnDef) {
+  rb(g, D_.w * 0.96, 0.55, 0.9, 0.14, 0, 0.28, 0, stdm(D_.color, 0.3));
+  rb(g, D_.w * 0.96 - 0.22, 0.04, 0.68, 0.1, 0, 0.5, 0, stdm(0x8fd0ee, 0.2));
+}
+function mLadder(g: THREE.Group, D_: FurnDef) {
+  const m = stdm(D_.color, 0.8);
+  rb(g, 0.06, 1, 0.06, 0.02, -0.3, 0.5, -0.45, m); rb(g, 0.06, 1, 0.06, 0.02, 0.3, 0.5, -0.45, m);
+  for (let i = 0; i < 4; i++) rb(g, 0.6, 0.05, 0.05, 0.01, 0, 0.12 + i * 0.25, -0.45, m);
+}
+function makeFurn(D_: FurnDef): THREE.Group {
+  const g = new THREE.Group();
+  switch (D_.kind) {
+    case 'sofa': mSofa(g, D_); break; case 'tv': mTV(g, D_); break; case 'bed': mBed(g, D_); break;
+    case 'table': mTable(g, D_); break; case 'chair': mChair(g, D_); break; case 'shelf': mShelf(g, D_); break;
+    case 'wardrobe': mWardrobe(g, D_); break; case 'fridge': mFridge(g); break; case 'lamp': mLamp(g); break;
+    case 'plant': mPlant(g, D_); break; case 'rug': mRug(g, D_); break; case 'tub': mTub(g, D_); break; case 'ladder': mLadder(g, D_); break;
+  }
+  g.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = D_.kind !== 'rug'; o.receiveShadow = true; } });
   return g;
 }
-function applyFurnState(k: number) {
-  const f = furn.get(k), g = furnGroups.get(k);
+function applyFurnState(a: number) {
+  const f = furn.get(a), g = furnGroups.get(a);
   if (!f || !g) return;
-  if (f.type === 'tv') g.traverse((o) => { if (o.name === 'screen') ((o as THREE.Mesh).material as THREE.MeshBasicMaterial).color.set(f.on ? 0x4fb7ff : 0x0b0d12); });
-  if (f.type === 'lamp') g.traverse((o) => { if (o.name === 'shade') (((o as THREE.Mesh).material) as THREE.MeshLambertMaterial).emissive.set(f.on ? 0xffd25a : 0x000000); });
+  if (f.type.startsWith('tv')) { const s = g.getObjectByName('screen') as THREE.Mesh; (s.material as THREE.MeshBasicMaterial).color.set(f.on ? 0x2f7fe0 : 0x0b0d12); }
+  if (f.type === 'lamp') { const s = g.getObjectByName('shade') as THREE.Mesh; (s.material as THREE.MeshStandardMaterial).emissive.set(f.on ? 0xffd25a : 0x000000); }
 }
 function addFurn(x: number, y: number, z: number, type: string, rot: number, on = false) {
-  const k = key(x, y, z);
-  removeFurn(x, y, z);
-  furn.set(k, { type, rot, on });
-  const g = makeFurn(type);
-  g.position.set(x + 0.5, y, z + 0.5); g.rotation.y = (rot * Math.PI) / 2;
-  scene.add(g); furnGroups.set(k, g); applyFurnState(k);
+  const D_ = furnDef(type); if (!D_) return;
+  const a = key(x, y, z);
+  for (const [cx, cy, cz] of cellsOf(D_, rot, x, y, z)) removeFurnAt(key(cx, cy, cz));
+  for (const [cx, cy, cz] of cellsOf(D_, rot, x, y, z)) owner.set(key(cx, cy, cz), a);
+  furn.set(a, { type, rot, on });
+  const [fw, fd] = dimsOf(D_, rot), g = makeFurn(D_);
+  g.position.set(x + fw / 2, y, z + fd / 2); g.rotation.y = (rot * Math.PI) / 2;
+  scene.add(g); furnGroups.set(a, g); applyFurnState(a);
 }
-function removeFurn(x: number, y: number, z: number) {
-  const k = key(x, y, z), g = furnGroups.get(k);
-  if (g) { scene.remove(g); furnGroups.delete(k); }
-  furn.delete(k);
+function removeFurnAt(cell: number) {
+  const a = owner.get(cell); if (a === undefined) return;
+  const f = furn.get(a)!, D_ = furnDef(f.type)!, [ax, ay, az] = unkey(a);
+  for (const [cx, cy, cz] of cellsOf(D_, f.rot, ax, ay, az)) owner.delete(key(cx, cy, cz));
+  furn.delete(a);
+  const g = furnGroups.get(a); if (g) { scene.remove(g); furnGroups.delete(a); }
 }
-function clearFurnMeshes() { for (const g of furnGroups.values()) scene.remove(g); furnGroups.clear(); }
+function clearFurnMeshes() { for (const g of furnGroups.values()) scene.remove(g); furnGroups.clear(); furn.clear(); owner.clear(); }
 
 // ───────── 충돌 / 레이캐스트 ─────────
 function solidAt(x: number, y: number, z: number) {
@@ -241,8 +374,8 @@ function solidAt(x: number, y: number, z: number) {
   if (!inb(x, y, z)) return x < 0 || x >= W || z < 0 || z >= D;
   const v = vox[idx(x, y, z)]!;
   if (v && v !== WATER) return true;
-  const f = furn.get(key(x, y, z));
-  return !!f && furnDef(f.type).solid;
+  const f = furnAt(key(x, y, z));
+  return !!f && furnDef(f.type)!.solid;
 }
 interface Hit { x: number; y: number; z: number; n: [number, number, number] }
 function raycast(o: THREE.Vector3, d: THREE.Vector3, max = 7): Hit | null {
@@ -255,7 +388,7 @@ function raycast(o: THREE.Vector3, d: THREE.Vector3, max = 7): Hit | null {
   let n: [number, number, number] = [0, 0, 0], t = 0;
   while (t <= max) {
     const v = getV(x, y, z);
-    if ((v && v !== WATER) || furn.has(key(x, y, z))) return { x, y, z, n };
+    if ((v && v !== WATER) || owner.has(key(x, y, z))) return { x, y, z, n };
     if (tx < ty && tx < tz) { x += sx; t = tx; tx += tdx; n = [-sx, 0, 0]; }
     else if (ty < tz) { y += sy; t = ty; ty += tdy; n = [0, -sy, 0]; }
     else { z += sz; t = tz; tz += tdz; n = [0, 0, -sz]; }
@@ -313,15 +446,31 @@ function doPrimary(h: Hit) {
   if (tool === 'raise' || tool === 'lower' || tool === 'flatten') return terrainApply(h);
   if (tool === 'pool') return buildPool(h);
   const k = key(h.x, h.y, h.z);
-  if (furn.has(k)) return removeFurn(h.x, h.y, h.z);
+  if (owner.has(k)) return removeFurnAt(k);
   if (getV(h.x, h.y, h.z) && h.y > 0) setV(h.x, h.y, h.z, 0);
+}
+function placeTarget(h: Hit): [number, number, number] { return [h.x + h.n[0], h.y + h.n[1], h.z + h.n[2]]; }
+function canPlaceFurn(D_: FurnDef, r: number, x: number, y: number, z: number) {
+  for (const [cx, cy, cz] of cellsOf(D_, r, x, y, z)) {
+    if (!inb(cx, cy, cz)) return false;
+    const v = getV(cx, cy, cz);
+    if ((v && v !== WATER) || owner.has(key(cx, cy, cz))) return false;
+    if (live && playerOverlaps(cx, cy, cz)) return false;
+  }
+  return true;
 }
 function doSecondary(h: Hit) {
   if (tool !== 'block') return;
-  const x = h.x + h.n[0], y = h.y + h.n[1], z = h.z + h.n[2];
-  if (!inb(x, y, z) || (getV(x, y, z) && getV(x, y, z) !== WATER) || furn.has(key(x, y, z))) return;
-  if (live && playerOverlaps(x, y, z)) return;
-  if (sel.kind === 'block') setV(x, y, z, sel.id); else addFurn(x, y, z, sel.id, rot);
+  const [x, y, z] = placeTarget(h);
+  if (sel.kind === 'block') {
+    if (!inb(x, y, z) || (getV(x, y, z) && getV(x, y, z) !== WATER) || owner.has(key(x, y, z))) return;
+    if (live && playerOverlaps(x, y, z)) return;
+    setV(x, y, z, sel.id);
+  } else {
+    const D_ = furnDef(sel.id)!;
+    if (!canPlaceFurn(D_, rot, x, y, z)) return toast('여기엔 놓을 수 없어요 (자리가 부족해요)');
+    addFurn(x, y, z, sel.id, rot);
+  }
 }
 function playerOverlaps(x: number, y: number, z: number) {
   const p = player.pos;
@@ -330,14 +479,16 @@ function playerOverlaps(x: number, y: number, z: number) {
 function interact() {
   const h = raycast(camera.position, camDir(), 6);
   if (!h) return;
-  const k = key(h.x, h.y, h.z), f = furn.get(k);
-  if (!f) return;
-  const def = furnDef(f.type);
-  if (f.type === 'tv' || f.type === 'lamp') { f.on = !f.on; applyFurnState(k); toast(f.on ? '켰어요' : '껐어요'); }
+  const k = key(h.x, h.y, h.z), a = owner.get(k), f = a === undefined ? undefined : furn.get(a);
+  if (!f || a === undefined) return;
+  const def = furnDef(f.type)!;
+  if (f.type.startsWith('tv') || f.type === 'lamp') { f.on = !f.on; applyFurnState(a); toast(f.on ? '켰어요' : '껐어요'); }
   else if (def.sit) {
     player.sit = true; player.vel.set(0, 0, 0);
-    player.pos.set(h.x + 0.5, h.y + (f.type === 'bed' ? 0.55 : 0.45) - 0.9 + 0.05, h.z + 0.5);
-    player.yaw = -f.rot * (Math.PI / 2); toast(`${def.name}에 앉았어요 (움직이면 일어나요)`);
+    const bed = def.kind === 'bed';
+    player.pos.set(h.x + 0.5, h.y + (bed ? 0.62 : 0.5) - 1.62 + 0.9, h.z + 0.5);
+    player.yaw = Math.PI + f.rot * (Math.PI / 2); player.pitch = 0;
+    toast(`${def.name}에 ${bed ? '누웠' : '앉았'}어요 (움직이면 일어나요)`);
   }
 }
 const camDir = () => new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ'));
@@ -374,7 +525,7 @@ function update(dt: number) {
     return;
   }
   const inWater = getV(Math.floor(p.x), Math.floor(p.y + 0.9), Math.floor(p.z)) === WATER;
-  const onLadder = furn.get(key(Math.floor(p.x), Math.floor(p.y + 0.5), Math.floor(p.z)))?.type === 'ladder';
+  const onLadder = furnAt(key(Math.floor(p.x), Math.floor(p.y + 0.5), Math.floor(p.z)))?.type === 'ladder';
   const speed = inWater ? 2.6 : keys.has('ControlLeft') ? 8 : 4.6;
   player.vel.x = mx * speed; player.vel.z = mz * speed;
   if (onLadder) player.vel.y = f > 0 || up ? 3.5 : down ? -3.5 : 0;
@@ -415,8 +566,8 @@ function load(silent = false) {
     const raw = localStorage.getItem('raumlife-builder'); if (!raw) { if (!silent) toast('저장된 월드가 없어요'); return false; }
     const d = JSON.parse(raw); let i = 0;
     for (let r = 0; r < d.rle.length; r += 2) for (let k = 0; k < d.rle[r + 1]; k++) vox[i++] = d.rle[r];
-    clearFurnMeshes(); furn.clear();
-    for (const [k, f] of d.furn as [number, Furn][]) { const x = k % W, z = ((k / W) | 0) % D, y = (k / (W * D)) | 0; addFurn(x, y, z, f.type, f.rot, f.on); }
+    clearFurnMeshes();
+    for (const [k, f] of d.furn as [number, Furn][]) { const [x, y, z] = unkey(k); addFurn(x, y, z, f.type, f.rot, f.on); }
     seedNum = d.seedNum; preset = d.preset; player.pos.set(d.pos[0], d.pos[1], d.pos[2]);
     dirtyAll(); if (!silent) toast('📂 불러왔어요'); return true;
   } catch { if (!silent) toast('불러오기 실패'); return false; }
@@ -452,8 +603,10 @@ function refreshUI() {
     b.onclick = (e) => { e.stopPropagation(); sel = s; if (tool !== 'block') setTool('block'); refreshUI(); }; side.appendChild(b);
   };
   BLOCKS.filter((b) => b.id !== WATER || true).forEach((b) => addItem(b.name, '#' + b.color.toString(16).padStart(6, '0'), { kind: 'block', id: b.id }));
-  side.insertAdjacentHTML('beforeend', '<h4>가구</h4>');
-  FURN.forEach((f) => addItem(f.name, '#c89a5a', { kind: 'furn', id: f.id }));
+  for (const c of CATS) {
+    side.insertAdjacentHTML('beforeend', `<h4>${c}</h4>`);
+    FURN.filter((f) => f.cat === c).forEach((f) => addItem(f.name, '#' + f.color.toString(16).padStart(6, '0'), { kind: 'furn', id: f.id }));
+  }
 }
 function hud() {
   const y = Math.floor(player.pos.y);
@@ -505,10 +658,18 @@ function frame(now: number) {
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
   let n = 0; for (const id of dirty) { rebuildChunk(id); dirty.delete(id); if (++n >= 6) break; }
   const h = document.pointerLockElement || true ? raycast(camera.position, camDir()) : null;
-  hl.visible = !!h; if (h) hl.position.set(h.x + 0.5, h.y + 0.5, h.z + 0.5);
+  hl.visible = !!h;
+  if (h) {
+    if (tool === 'block' && sel.kind === 'furn') {
+      const D_ = furnDef(sel.id)!, [fw, fd] = dimsOf(D_, rot), [tx, ty, tz] = placeTarget(h);
+      hl.scale.set(fw, D_.h, fd); hl.position.set(tx + fw / 2, ty + D_.h / 2, tz + fd / 2);
+      (hl.material as THREE.LineBasicMaterial).color.set(canPlaceFurn(D_, rot, tx, ty, tz) ? 0x1f9d55 : 0xd23b3b);
+    } else { hl.scale.set(1, 1, 1); hl.position.set(h.x + 0.5, h.y + 0.5, h.z + 0.5); (hl.material as THREE.LineBasicMaterial).color.set(0x111111); }
+  }
+  for (const [a, f] of furn) if (f.on && f.type.startsWith('tv')) { const sc = furnGroups.get(a)?.getObjectByName('screen') as THREE.Mesh | undefined; if (sc) (sc.material as THREE.MeshBasicMaterial).color.setHSL(0.55 + 0.12 * Math.sin(now / 1500), 0.85, 0.42); }
   if (hold === 0 && h && tool !== 'block' && tool !== 'pool') { holdT += dt; if (holdT > 0.12) { holdT = 0; doPrimary(h); } }
   const wl = getV(Math.floor(camera.position.x), Math.floor(camera.position.y), Math.floor(camera.position.z)) === WATER;
-  (scene.fog as THREE.Fog).color.set(wl ? 0x2a5fa8 : 0x87ceeb); (scene.fog as THREE.Fog).far = wl ? 18 : 130; scene.background = new THREE.Color(wl ? 0x2a5fa8 : 0x87ceeb);
+  (scene.fog as THREE.Fog).color.set(wl ? 0x2a5fa8 : 0xd3e7f5); (scene.fog as THREE.Fog).far = wl ? 18 : 140; scene.background = wl ? new THREE.Color(0x2a5fa8) : sky;
   hud(); renderer.render(scene, camera); requestAnimationFrame(frame);
 }
 
