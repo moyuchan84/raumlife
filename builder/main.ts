@@ -134,17 +134,62 @@ const scene = new THREE.Scene();
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
 const skyC = document.createElement('canvas'); skyC.width = 2; skyC.height = 256;
-{ const c = skyC.getContext('2d')!, g = c.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, '#6fb0e6'); g.addColorStop(0.65, '#bfdcf2'); g.addColorStop(1, '#eef5fa'); c.fillStyle = g; c.fillRect(0, 0, 2, 256); }
 const sky = new THREE.CanvasTexture(skyC); sky.colorSpace = THREE.SRGBColorSpace;
 scene.background = sky;
 scene.fog = new THREE.Fog(0xd3e7f5, 50, 140);
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 300);
-scene.add(new THREE.HemisphereLight(0xdcecff, 0x8a8576, 1.25));
+const hemi = new THREE.HemisphereLight(0xdcecff, 0x8a8576, 1.25); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d6, 2.2);
 sun.position.set(W / 2 + 38, 70, D / 2 + 24); sun.target.position.set(W / 2, 0, D / 2);
 sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04;
 Object.assign(sun.shadow.camera, { left: -52, right: 52, top: 52, bottom: -52, near: 1, far: 180 });
 scene.add(sun, sun.target);
+
+// ───────── 낮과 밤 ─────────
+let hour = 10, autoTime = false, nightW = 0, dayW = 1, skyHour = -1;
+const lampLights = Array.from({ length: 6 }, () => { const l = new THREE.PointLight(0xffd58a, 0, 10, 1.6); scene.add(l); return l; });
+const starGeo = new THREE.BufferGeometry();
+{ const pts: number[] = []; for (let i = 0; i < 450; i++) { const u = Math.random() * 2 - 1, t = Math.random() * Math.PI * 2, r = Math.sqrt(1 - u * u); pts.push(r * Math.cos(t) * 200, Math.abs(u) * 200 * 0.95 + 8, r * Math.sin(t) * 200); } starGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3)); }
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false });
+const stars = new THREE.Points(starGeo, starMat); stars.frustumCulled = false; scene.add(stars);
+const hex = (c: number[]) => '#' + c.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+const SKY = { day: [[111, 176, 230], [191, 220, 242], [238, 245, 250]], dusk: [[70, 80, 150], [240, 150, 110], [255, 205, 150]], night: [[6, 10, 28], [16, 24, 58], [30, 40, 80]] };
+function updateTime() {
+  const a = ((hour - 6) / 12) * Math.PI, el = Math.sin(a);            // 6시 일출, 12시 정오, 18시 일몰
+  const sm = (x: number) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+  dayW = sm(el * 4); nightW = sm(-el * 4 + 0.15); const duskW = Math.max(0, 1 - Math.abs(el) * 4);
+  const tot = dayW + nightW + duskW || 1, wd = dayW / tot, wn = nightW / tot, wu = duskW / tot;
+  const sunUp = el > 0, ang = sunUp ? a : a + Math.PI;
+  sun.position.set(W / 2 + Math.cos(ang) * -60, Math.max(10, Math.abs(Math.sin(ang)) * 70 + 6), D / 2 + 26);
+  sun.color.setRGB(1, 0.94 - 0.3 * wu, 0.84 - 0.45 * wu);
+  if (!sunUp) sun.color.set(0x9db4ff);
+  sun.intensity = sunUp ? 2.2 * sm(el * 3) + 0.15 : 0.8 * sm(-el * 3 + 0.2);
+  hemi.intensity = 0.5 + 0.8 * dayW + 0.25 * duskW; hemi.color.setRGB(0.86 * wd + 0.55 * wn + 0.9 * wu, 0.93 * wd + 0.62 * wn + 0.75 * wu, 1 * wd + 0.95 * wn + 0.7 * wu);
+  hemi.groundColor.setRGB(0.54 * dayW + 0.12, 0.52 * dayW + 0.13, 0.46 * dayW + 0.2);
+  renderer.toneMappingExposure = 0.9 + 0.2 * dayW;
+  starMat.opacity = Math.max(0, nightW - 0.2) * 1.25;
+  if (Math.abs(skyHour - hour) > 0.02) {
+    skyHour = hour; const cols = [0, 1, 2].map((i) => [0, 1, 2].map((k) => SKY.day[i]![k]! * wd + SKY.dusk[i]![k]! * wu + SKY.night[i]![k]! * wn));
+    const c = skyC.getContext('2d')!, g = c.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, hex(cols[0]!)); g.addColorStop(0.65, hex(cols[1]!)); g.addColorStop(1, hex(cols[2]!)); c.fillStyle = g; c.fillRect(0, 0, 2, 256); sky.needsUpdate = true;
+    fogDay.set(hex(cols[1]!));
+  }
+}
+const fogDay = new THREE.Color(0xd3e7f5);
+const clock12 = (h: number) => { const hh = Math.floor(h) % 24, mm = Math.floor((h % 1) * 60); return `${hh < 12 ? '오전' : '오후'} ${hh % 12 || 12}:${String(mm).padStart(2, '0')}`; };
+function updateLamps() {
+  const lamps: { x: number; y: number; z: number; d: number; tv: boolean }[] = [];
+  if (nightW > 0.03) for (const [a, f] of furn) if (f.on && (f.type === 'lamp' || f.type.startsWith('tv'))) {
+    const D_ = furnDef(f.type)!, [ax, ay, az] = unkey(a), [fw, fd] = dimsOf(D_, f.rot), x = ax + fw / 2, z = az + fd / 2, y = ay + (f.type === 'lamp' ? 1 : 0.8);
+    lamps.push({ x, y, z, d: Math.hypot(x - camera.position.x, y - camera.position.y, z - camera.position.z), tv: f.type !== 'lamp' });
+  }
+  lamps.sort((p, q) => p.d - q.d);
+  lampLights.forEach((l, i) => {
+    const m = lamps[i];
+    if (!m) { l.intensity = 0; return; }
+    l.position.set(m.x, m.y, m.z); l.color.set(m.tv ? 0x6fb0ff : 0xffd58a); l.intensity = (m.tv ? 4 : 9) * Math.min(1, nightW * 1.5); l.distance = m.tv ? 8 : 11;
+  });
+}
 addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
@@ -483,7 +528,7 @@ function doSecondary(h: Hit) {
   } else {
     const D_ = furnDef(sel.id)!;
     if (!canPlaceFurn(D_, rot, x, y, z)) return toast('여기엔 놓을 수 없어요 (자리가 부족해요)');
-    addFurn(x, y, z, sel.id, rot, false, furnColor ?? undefined);
+    addFurn(x, y, z, sel.id, rot, D_.kind === 'lamp', furnColor ?? undefined);
   }
 }
 function playerOverlaps(x: number, y: number, z: number) {
@@ -572,7 +617,7 @@ function save() {
   const rle: number[] = []; let prev = vox[0]!, n = 0;
   for (let i = 0; i < vox.length; i++) { if (vox[i] === prev && n < 65535) n++; else { rle.push(prev, n); prev = vox[i]!; n = 1; } }
   rle.push(prev, n);
-  const data = { v: 1, rle, furn: [...furn.entries()], seedNum, preset, pos: [player.pos.x, player.pos.y, player.pos.z] };
+  const data = { v: 1, hour, rle, furn: [...furn.entries()], seedNum, preset, pos: [player.pos.x, player.pos.y, player.pos.z] };
   try { localStorage.setItem('raumlife-builder', JSON.stringify(data)); toast('💾 저장했어요'); } catch { toast('저장 실패'); }
 }
 function load(silent = false) {
@@ -582,7 +627,7 @@ function load(silent = false) {
     for (let r = 0; r < d.rle.length; r += 2) for (let k = 0; k < d.rle[r + 1]; k++) vox[i++] = d.rle[r];
     clearFurnMeshes();
     for (const [k, f] of d.furn as [number, Furn][]) { const [x, y, z] = unkey(k); addFurn(x, y, z, f.type, f.rot, f.on, f.color); }
-    seedNum = d.seedNum; preset = d.preset; player.pos.set(d.pos[0], d.pos[1], d.pos[2]);
+    if (typeof d.hour === 'number') hour = d.hour; seedNum = d.seedNum; preset = d.preset; player.pos.set(d.pos[0], d.pos[1], d.pos[2]);
     dirtyAll(); if (!silent) toast('📂 불러왔어요'); return true;
   } catch { if (!silent) toast('불러오기 실패'); return false; }
 }
@@ -610,6 +655,12 @@ function refreshUI() {
   inp.onchange = () => { seedNum = parseInt(inp.value) || 1; };
   top.append(sel1, inp);
   mk('🌍 새 땅', false, newWorld);
+  const ts = document.createElement('input'); ts.type = 'range'; ts.min = '0'; ts.max = '24'; ts.step = '0.1'; ts.value = String(hour); ts.id = 'tslider'; ts.title = '시간';
+  ts.style.cssText = 'width:120px;padding:0;vertical-align:middle'; ts.onclick = (e) => e.stopPropagation(); ts.oninput = () => { hour = parseFloat(ts.value); };
+  const lab = document.createElement('span'); lab.id = 'tlabel'; lab.style.cssText = 'align-self:center;min-width:66px';
+  top.append(document.createTextNode('🕒'), ts, lab);
+  mk(autoTime ? '⏸ 시간 흐름' : '▶ 시간 흐름', autoTime, () => { autoTime = !autoTime; refreshUI(); });
+  mk('☀️ 낮', false, () => { hour = 12; }); mk('🌙 밤', false, () => { hour = 22; });
   const side = $('side'); side.innerHTML = '<h4>가구 색 (🎨 도구로 칠하기)</h4>';
   const row = document.createElement('div'); row.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px';
   const sw = (c: number | null) => {
@@ -661,6 +712,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') { rot = (rot + 1) % 4; }
   if (e.code === 'KeyE') interact();
   if (e.code === 'KeyF') setMode(!live);
+  if (e.code === 'KeyT') hour = (hour + 3) % 24;
   if ((e.code === 'KeyX' || e.code === 'Delete') && !live) { const h = raycast(camera.position, camDir()); if (h) eraseAt(h); }
   if (e.code === 'Space') e.preventDefault();
   if (e.code === 'Tab') { e.preventDefault(); }
@@ -695,11 +747,14 @@ function frame(now: number) {
   }
   for (const [a, f] of furn) if (f.on && f.type.startsWith('tv')) { const sc = furnGroups.get(a)?.getObjectByName('screen') as THREE.Mesh | undefined; if (sc) (sc.material as THREE.MeshBasicMaterial).color.setHSL(0.55 + 0.12 * Math.sin(now / 1500), 0.85, 0.42); }
   if (hold === 0 && h && tool !== 'block' && tool !== 'pool' && tool !== 'paint' && tool !== 'erase') { holdT += dt; if (holdT > 0.12) { holdT = 0; doPrimary(h); } }
+  if (autoTime) hour = (hour + dt * 0.25) % 24;
+  updateTime(); updateLamps(); stars.position.copy(camera.position);
+  { const sl = document.getElementById('tslider') as HTMLInputElement | null, lb = document.getElementById('tlabel'); if (sl && autoTime) sl.value = String(hour); if (lb) lb.textContent = clock12(hour); }
   const wl = getV(Math.floor(camera.position.x), Math.floor(camera.position.y), Math.floor(camera.position.z)) === WATER;
-  (scene.fog as THREE.Fog).color.set(wl ? 0x2a5fa8 : 0xd3e7f5); (scene.fog as THREE.Fog).far = wl ? 18 : 140; scene.background = wl ? new THREE.Color(0x2a5fa8) : sky;
+  (scene.fog as THREE.Fog).color.copy(wl ? new THREE.Color(0x2a5fa8).multiplyScalar(0.2 + 0.8 * dayW) : fogDay); (scene.fog as THREE.Fog).far = wl ? 18 : 140; scene.background = wl ? new THREE.Color(0x2a5fa8).multiplyScalar(0.2 + 0.8 * dayW) : sky;
   hud(); renderer.render(scene, camera); requestAnimationFrame(frame);
 }
 
 if (!load(true)) { generate(preset, seedNum); respawn(); player.pos.y += 3; }
 refreshUI(); requestAnimationFrame(frame);
-(window as any).__rl = { owner, doPrimary, setFurnColor: (c: number | null) => { furnColor = c; }, vox, furn, player, setMode, addFurn, setV, generate, raycast, buildPool, getV, topY, setTool, interact, camera, rebuildAll: () => { dirtyAll(); } };
+(window as any).__rl = { setHour: (h: number) => { hour = h; }, owner, doPrimary, setFurnColor: (c: number | null) => { furnColor = c; }, vox, furn, player, setMode, addFurn, setV, generate, raycast, buildPool, getV, topY, setTool, interact, camera, rebuildAll: () => { dirtyAll(); } };
