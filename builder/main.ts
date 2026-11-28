@@ -63,7 +63,7 @@ F('소품', 'plant_big', '큰 화분', 'plant', 1, 1, 0x2f8a46, { solid: false, 
 F('소품', 'rug', '러그 (큰)', 'rug', 2, 2, 0xc4796b, { solid: false });
 F('소품', 'tub', '욕조', 'tub', 2, 1, 0xf6f8fa);
 F('소품', 'ladder', '사다리', 'ladder', 1, 1, 0x8a5a34, { solid: false });
-interface Furn { type: string; rot: number; on?: boolean }
+interface Furn { type: string; rot: number; on?: boolean; color?: number }
 const furn = new Map<number, Furn>(); // 기준 칸(최소 좌표) → 가구
 const owner = new Map<number, number>(); // 점유 칸 → 기준 칸
 const furnGroups = new Map<number, THREE.Object3D>();
@@ -74,7 +74,7 @@ function cellsOf(d: FurnDef, rot: number, x: number, y: number, z: number) {
   for (let yy = 0; yy < d.h; yy++) for (let zz = 0; zz < fd; zz++) for (let xx = 0; xx < fw; xx++) out.push([x + xx, y + yy, z + zz]);
   return out;
 }
-const unkey = (k: number): [number, number, number] => [k % W, (((k / W) | 0) % D), ((k / (W * D)) | 0)];
+const unkey = (k: number): [number, number, number] => [k % W, (k / (W * D)) | 0, ((k / W) | 0) % D];
 const furnAt = (k: number) => { const a = owner.get(k); return a === undefined ? undefined : furn.get(a); };
 
 // ───────── 지형 생성 ─────────
@@ -349,13 +349,13 @@ function applyFurnState(a: number) {
   if (f.type.startsWith('tv')) { const s = g.getObjectByName('screen') as THREE.Mesh; (s.material as THREE.MeshBasicMaterial).color.set(f.on ? 0x2f7fe0 : 0x0b0d12); }
   if (f.type === 'lamp') { const s = g.getObjectByName('shade') as THREE.Mesh; (s.material as THREE.MeshStandardMaterial).emissive.set(f.on ? 0xffd25a : 0x000000); }
 }
-function addFurn(x: number, y: number, z: number, type: string, rot: number, on = false) {
+function addFurn(x: number, y: number, z: number, type: string, rot: number, on = false, color?: number) {
   const D_ = furnDef(type); if (!D_) return;
   const a = key(x, y, z);
   for (const [cx, cy, cz] of cellsOf(D_, rot, x, y, z)) removeFurnAt(key(cx, cy, cz));
   for (const [cx, cy, cz] of cellsOf(D_, rot, x, y, z)) owner.set(key(cx, cy, cz), a);
-  furn.set(a, { type, rot, on });
-  const [fw, fd] = dimsOf(D_, rot), g = makeFurn(D_);
+  furn.set(a, { type, rot, on, ...(color === undefined ? {} : { color }) });
+  const [fw, fd] = dimsOf(D_, rot), g = makeFurn(color === undefined ? D_ : { ...D_, color });
   g.position.set(x + fw / 2, y, z + fd / 2); g.rotation.y = (rot * Math.PI) / 2;
   scene.add(g); furnGroups.set(a, g); applyFurnState(a);
 }
@@ -397,7 +397,9 @@ function raycast(o: THREE.Vector3, d: THREE.Vector3, max = 7): Hit | null {
 }
 
 // ───────── 상태 / 도구 ─────────
-type Tool = 'block' | 'raise' | 'lower' | 'flatten' | 'pool';
+type Tool = 'block' | 'raise' | 'lower' | 'flatten' | 'pool' | 'paint' | 'erase';
+let furnColor: number | null = null;
+const SWATCHES = [0xf2f0ea, 0xd9c4a1, 0x8b8e95, 0x2c2c32, 0x7b4b2f, 0xc4796b, 0xe7c9d0, 0xd8a15a, 0x6f8f7d, 0x7c91b3, 0x5a6fa8, 0x8a6fb0];
 let tool: Tool = 'block';
 type Sel = { kind: 'block'; id: number } | { kind: 'furn'; id: string };
 let sel: Sel = { kind: 'block', id: 5 };
@@ -442,9 +444,21 @@ function buildPool(h: Hit) {
   toast('수영장을 만들었어요! 생활 모드에서 헤엄쳐 보세요 🏊 (R: 방향 바꾸기)');
 }
 
+function eraseAt(h: Hit) {
+  const k = key(h.x, h.y, h.z);
+  if (owner.has(k)) { const f = furnAt(k)!; removeFurnAt(k); toast(`${furnDef(f.type)!.name} 지웠어요`); }
+  else if (getV(h.x, h.y, h.z) && h.y > 0) setV(h.x, h.y, h.z, 0);
+}
 function doPrimary(h: Hit) {
   if (tool === 'raise' || tool === 'lower' || tool === 'flatten') return terrainApply(h);
   if (tool === 'pool') return buildPool(h);
+  if (tool === 'erase') return eraseAt(h);
+  if (tool === 'paint') {
+    const a = owner.get(key(h.x, h.y, h.z)), f = a === undefined ? undefined : furn.get(a);
+    if (!f || a === undefined) return toast('색을 바꿀 가구를 가리켜 주세요');
+    const [ax, ay, az] = unkey(a); addFurn(ax, ay, az, f.type, f.rot, f.on, furnColor ?? undefined);
+    return;
+  }
   const k = key(h.x, h.y, h.z);
   if (owner.has(k)) return removeFurnAt(k);
   if (getV(h.x, h.y, h.z) && h.y > 0) setV(h.x, h.y, h.z, 0);
@@ -469,7 +483,7 @@ function doSecondary(h: Hit) {
   } else {
     const D_ = furnDef(sel.id)!;
     if (!canPlaceFurn(D_, rot, x, y, z)) return toast('여기엔 놓을 수 없어요 (자리가 부족해요)');
-    addFurn(x, y, z, sel.id, rot);
+    addFurn(x, y, z, sel.id, rot, false, furnColor ?? undefined);
   }
 }
 function playerOverlaps(x: number, y: number, z: number) {
@@ -567,7 +581,7 @@ function load(silent = false) {
     const d = JSON.parse(raw); let i = 0;
     for (let r = 0; r < d.rle.length; r += 2) for (let k = 0; k < d.rle[r + 1]; k++) vox[i++] = d.rle[r];
     clearFurnMeshes();
-    for (const [k, f] of d.furn as [number, Furn][]) { const [x, y, z] = unkey(k); addFurn(x, y, z, f.type, f.rot, f.on); }
+    for (const [k, f] of d.furn as [number, Furn][]) { const [x, y, z] = unkey(k); addFurn(x, y, z, f.type, f.rot, f.on, f.color); }
     seedNum = d.seedNum; preset = d.preset; player.pos.set(d.pos[0], d.pos[1], d.pos[2]);
     dirtyAll(); if (!silent) toast('📂 불러왔어요'); return true;
   } catch { if (!silent) toast('불러오기 실패'); return false; }
@@ -581,7 +595,7 @@ const $ = (id: string) => document.getElementById(id)!;
 let toastT = 0;
 function toast(msg: string) { const t = $('toast'); t.textContent = msg; t.style.opacity = '1'; clearTimeout(toastT); toastT = window.setTimeout(() => (t.style.opacity = '0'), 2600); }
 function setTool(t: Tool) { tool = t; refreshUI(); }
-const TOOLS: [Tool, string][] = [['block', '🧱 블록·가구'], ['raise', '⛰️ 땅 올리기'], ['lower', '🕳️ 땅 내리기'], ['flatten', '➖ 평탄화'], ['pool', '🏊 수영장']];
+const TOOLS: [Tool, string][] = [['block', '🧱 블록·가구'], ['raise', '⛰️ 땅 올리기'], ['lower', '🕳️ 땅 내리기'], ['flatten', '➖ 평탄화'], ['pool', '🏊 수영장'], ['paint', '🎨 가구 색칠'], ['erase', '🗑️ 지우기']];
 function refreshUI() {
   const top = $('top'); top.innerHTML = '';
   const mk = (label: string, on: boolean, fn: () => void) => { const b = document.createElement('button'); b.textContent = label; if (on) b.className = 'on'; b.onclick = (e) => { e.stopPropagation(); fn(); }; top.appendChild(b); return b; };
@@ -596,7 +610,19 @@ function refreshUI() {
   inp.onchange = () => { seedNum = parseInt(inp.value) || 1; };
   top.append(sel1, inp);
   mk('🌍 새 땅', false, newWorld);
-  const side = $('side'); side.innerHTML = '<h4>블록</h4>';
+  const side = $('side'); side.innerHTML = '<h4>가구 색 (🎨 도구로 칠하기)</h4>';
+  const row = document.createElement('div'); row.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px';
+  const sw = (c: number | null) => {
+    const b = document.createElement('button'); b.title = c === null ? '기본 색' : '#' + c.toString(16);
+    b.style.cssText = `width:24px;height:24px;padding:0;border:2px solid ${furnColor === c ? '#e8a33d' : '#0006'};` + (c === null ? 'background:linear-gradient(135deg,#fff 50%,#444 50%)' : `background:#${c.toString(16).padStart(6, '0')}`);
+    b.onclick = (e) => { e.stopPropagation(); furnColor = c; refreshUI(); }; row.appendChild(b);
+  };
+  sw(null); SWATCHES.forEach(sw);
+  const pick = document.createElement('input'); pick.type = 'color'; pick.style.cssText = 'width:24px;height:24px;padding:0;border:0;background:none';
+  pick.value = '#' + (furnColor ?? 0xffffff).toString(16).padStart(6, '0'); pick.title = '직접 고르기';
+  pick.onclick = (e) => e.stopPropagation(); pick.oninput = () => { furnColor = parseInt(pick.value.slice(1), 16); };
+  pick.onchange = () => refreshUI(); row.appendChild(pick); side.appendChild(row);
+  side.insertAdjacentHTML('beforeend', '<h4>블록</h4>');
   const addItem = (name: string, color: string, s: Sel) => {
     const b = document.createElement('button'); b.className = 'item' + (sel.kind === s.kind && sel.id === s.id ? ' on' : '');
     b.innerHTML = `<span class="sw" style="background:${color}"></span>${name}`;
@@ -635,6 +661,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') { rot = (rot + 1) % 4; }
   if (e.code === 'KeyE') interact();
   if (e.code === 'KeyF') setMode(!live);
+  if ((e.code === 'KeyX' || e.code === 'Delete') && !live) { const h = raycast(camera.position, camDir()); if (h) eraseAt(h); }
   if (e.code === 'Space') e.preventDefault();
   if (e.code === 'Tab') { e.preventDefault(); }
   const n = parseInt(e.key); if (n >= 1 && n <= BLOCKS.length) { sel = { kind: 'block', id: BLOCKS[n - 1]!.id }; if (tool !== 'block') tool = 'block'; refreshUI(); }
@@ -667,7 +694,7 @@ function frame(now: number) {
     } else { hl.scale.set(1, 1, 1); hl.position.set(h.x + 0.5, h.y + 0.5, h.z + 0.5); (hl.material as THREE.LineBasicMaterial).color.set(0x111111); }
   }
   for (const [a, f] of furn) if (f.on && f.type.startsWith('tv')) { const sc = furnGroups.get(a)?.getObjectByName('screen') as THREE.Mesh | undefined; if (sc) (sc.material as THREE.MeshBasicMaterial).color.setHSL(0.55 + 0.12 * Math.sin(now / 1500), 0.85, 0.42); }
-  if (hold === 0 && h && tool !== 'block' && tool !== 'pool') { holdT += dt; if (holdT > 0.12) { holdT = 0; doPrimary(h); } }
+  if (hold === 0 && h && tool !== 'block' && tool !== 'pool' && tool !== 'paint' && tool !== 'erase') { holdT += dt; if (holdT > 0.12) { holdT = 0; doPrimary(h); } }
   const wl = getV(Math.floor(camera.position.x), Math.floor(camera.position.y), Math.floor(camera.position.z)) === WATER;
   (scene.fog as THREE.Fog).color.set(wl ? 0x2a5fa8 : 0xd3e7f5); (scene.fog as THREE.Fog).far = wl ? 18 : 140; scene.background = wl ? new THREE.Color(0x2a5fa8) : sky;
   hud(); renderer.render(scene, camera); requestAnimationFrame(frame);
@@ -675,4 +702,4 @@ function frame(now: number) {
 
 if (!load(true)) { generate(preset, seedNum); respawn(); player.pos.y += 3; }
 refreshUI(); requestAnimationFrame(frame);
-(window as any).__rl = { vox, furn, player, setMode, addFurn, setV, generate, raycast, buildPool, getV, topY, setTool, interact, camera, rebuildAll: () => { dirtyAll(); } };
+(window as any).__rl = { owner, doPrimary, setFurnColor: (c: number | null) => { furnColor = c; }, vox, furn, player, setMode, addFurn, setV, generate, raycast, buildPool, getV, topY, setTool, interact, camera, rebuildAll: () => { dirtyAll(); } };
