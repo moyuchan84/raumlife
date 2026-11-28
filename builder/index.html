@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Raumlife 빌더</title>
+<style>
+*{box-sizing:border-box}body{margin:0;overflow:hidden;background:#87ceeb;font:13px/1.4 system-ui,sans-serif;color:#fff}
+canvas{display:block}
+.panel{position:fixed;background:rgba(20,24,32,.82);border-radius:10px;padding:10px;backdrop-filter:blur(4px)}
+#top{top:10px;left:10px;display:flex;gap:6px;flex-wrap:wrap;max-width:calc(100vw - 20px)}
+#side{top:62px;left:10px;width:170px;max-height:calc(100vh - 80px);overflow:auto}
+#hud{top:10px;right:10px;text-align:right;min-width:150px}
+button,select,input{font:inherit;border:0;border-radius:6px;padding:5px 9px;background:#3b4558;color:#fff;cursor:pointer}
+button:hover{background:#4d5a73}button.on{background:#e8a33d;color:#222}
+input{width:90px;cursor:text}
+h4{margin:8px 0 4px;font-size:12px;opacity:.7}
+.item{display:flex;align-items:center;gap:6px;width:100%;margin:2px 0;text-align:left}
+.sw{width:14px;height:14px;border-radius:3px;flex:none;border:1px solid #0006}
+#cross{position:fixed;left:50%;top:50%;width:14px;height:14px;margin:-7px;pointer-events:none}
+#cross:before,#cross:after{content:"";position:absolute;background:#fff;mix-blend-mode:difference}
+#cross:before{left:6px;top:0;width:2px;height:14px}#cross:after{top:6px;left:0;height:2px;width:14px}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#000a;padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .3s;pointer-events:none}
+#help{bottom:10px;left:10px;font-size:12px;opacity:.85;max-width:420px}
+</style></head><body>
+<div id="top" class="panel"></div>
+<div id="side" class="panel"></div>
+<div id="hud" class="panel"></div>
+<div id="cross"></div><div id="toast"></div>
+<div id="help" class="panel">클릭: 시작 · WASD 이동 · 마우스 시점 · 좌클릭 사용/부수기 · 우클릭 놓기 · 휠 선택 · R 회전 · E 앉기/TV/조명 · F 건축↔생활 · Space/Shift 위·아래 · Esc 메뉴</div>
+<script src="dist/main.js"></script>
+</body></html>

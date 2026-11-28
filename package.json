@@ -11,7 +11,8 @@
     "build:client": "node scripts/build-client.mjs",
     "start": "npm run build:client && tsx src/server/index.ts",
     "server": "tsx src/server/index.ts",
-    "build:standalone": "node scripts/build-standalone.mjs"
+    "build:standalone": "node scripts/build-standalone.mjs",
+    "build:builder": "node scripts/build-builder.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.11",
